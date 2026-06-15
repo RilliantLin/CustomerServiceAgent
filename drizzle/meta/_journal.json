@@ -5,13 +5,6 @@
     {
       "idx": 0,
       "version": "5",
-      "when": 1781404711154,
-      "tag": "0000_cold_havok",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "5",
       "when": 1781405133575,
       "tag": "0001_curved_daredevil",
       "breakpoints": true

@@ -16,7 +16,22 @@ async function seedData() {
   try {
     console.log("开始插入模拟数据...");
 
-    // 1. 插入知识库数据
+    // 1. 插入示例用户数据
+    await connection.execute(
+      `INSERT INTO users (openId, name, email, loginMethod, role)
+       VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         name = VALUES(name),
+         email = VALUES(email),
+         loginMethod = VALUES(loginMethod),
+         role = VALUES(role)`,
+      ["seed-user", "示例用户", "demo@example.com", "seed", "user"]
+    );
+    const [users] = await connection.execute("SELECT id FROM users WHERE openId = ?", ["seed-user"]);
+    const seedUserId = users[0].id;
+    console.log(`已准备示例用户，ID: ${seedUserId}`);
+
+    // 2. 插入知识库数据
     const knowledgeData = [
       {
         title: "如何重置密码？",
@@ -76,38 +91,38 @@ async function seedData() {
     }
     console.log(`已插入 ${knowledgeData.length} 条知识库数据`);
 
-    // 2. 插入示例工单数据
+    // 3. 插入示例工单数据
     const ticketData = [
       {
-        userId: 1,
+        userId: seedUserId,
         title: "无法登录账户",
         description: "我已经尝试了多次，但仍然无法使用我的账户登录。每次输入正确的密码后，系统都会显示登录失败的错误。我已经检查了大小写，也确认密码是正确的。",
         status: "pending",
         priority: "high",
       },
       {
-        userId: 1,
+        userId: seedUserId,
         title: "产品质量问题",
         description: "我收到的产品存在明显的质量问题。包装盒有破损，产品表面有划痕。这不是我期望的产品质量。请告诉我如何处理这个问题。",
         status: "in_progress",
         priority: "urgent",
       },
       {
-        userId: 1,
+        userId: seedUserId,
         title: "退款申请",
         description: "我想退回我在上周购买的产品。产品没有按照描述工作，我想申请退款。请告诉我退款流程。",
         status: "resolved",
         priority: "medium",
       },
       {
-        userId: 1,
+        userId: seedUserId,
         title: "功能使用问题",
         description: "我不太清楚如何使用高级功能。能否提供一些教程或指导？",
         status: "closed",
         priority: "low",
       },
       {
-        userId: 1,
+        userId: seedUserId,
         title: "账户被锁定",
         description: "我的账户似乎被锁定了。我尝试了多次登录，现在系统说我的账户已被暂时锁定。我需要立即恢复访问权限。",
         status: "pending",
@@ -123,29 +138,29 @@ async function seedData() {
     }
     console.log(`已插入 ${ticketData.length} 条工单数据`);
 
-    // 3. 插入示例工单备注
+    // 4. 插入示例工单备注
     const noteData = [
       {
         ticketId: 1,
-        userId: 1,
+        userId: seedUserId,
         content: "我已经尝试了重置密码，但问题仍然存在。",
         noteType: "comment",
       },
       {
         ticketId: 2,
-        userId: 1,
+        userId: seedUserId,
         content: "已拍照记录，准备申请退货。",
         noteType: "comment",
       },
       {
         ticketId: 3,
-        userId: 1,
+        userId: seedUserId,
         content: "已确认退货地址，等待收货。",
         noteType: "comment",
       },
       {
         ticketId: 3,
-        userId: 1,
+        userId: seedUserId,
         content: "Status changed from in_progress to resolved",
         noteType: "status_change",
       },
