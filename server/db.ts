@@ -2,6 +2,12 @@ import { eq, and, desc, like, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, tickets, knowledgeBase, chatMessages, ticketNotes } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import {
+  cosineSimilarity,
+  createEmbedding,
+  isEmbeddingEnabled,
+  parseEmbedding,
+} from "./_core/embeddings";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -210,14 +216,79 @@ export async function getKnowledgeByCategory(category: string) {
   return db.select().from(knowledgeBase).where(eq(knowledgeBase.category, category));
 }
 
+export async function listKnowledgeEntries() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db.select().from(knowledgeBase);
+}
+
+export async function updateKnowledgeEmbedding(id: number, embedding: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db.update(knowledgeBase)
+    .set({ embedding })
+    .where(eq(knowledgeBase.id, id));
+}
+
+async function fallbackSearchKnowledge(query: string, limit: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const titleResults = await db.select().from(knowledgeBase)
+    .where(like(knowledgeBase.title, `%${query}%`))
+    .limit(limit);
+
+  if (titleResults.length > 0) return titleResults;
+
+  return db.select().from(knowledgeBase)
+    .where(like(knowledgeBase.keywords, `%${query}%`))
+    .limit(limit);
+}
+
 export async function searchKnowledge(query: string, limit = 5) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // Simple keyword-based search (can be enhanced with full-text search or vector similarity)
-  return db.select().from(knowledgeBase)
-    .where(like(knowledgeBase.title, `%${query}%`))
-    .limit(limit);
+  if (!isEmbeddingEnabled()) {
+    return fallbackSearchKnowledge(query, limit);
+  }
+
+  try {
+    const entries = await db.select().from(knowledgeBase);
+    const entriesWithEmbeddings = entries
+      .map(entry => ({
+        entry,
+        embedding: parseEmbedding(entry.embedding),
+      }))
+      .filter((item): item is { entry: typeof entries[number]; embedding: number[] } =>
+        Boolean(item.embedding)
+      );
+
+    if (entriesWithEmbeddings.length === 0) {
+      return fallbackSearchKnowledge(query, limit);
+    }
+
+    const queryEmbedding = await createEmbedding(query);
+    const scored = entries
+      .map(entry => {
+        const embedding = parseEmbedding(entry.embedding);
+        return {
+          entry,
+          score: embedding ? cosineSimilarity(queryEmbedding, embedding) : 0,
+        };
+      })
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(item => item.entry);
+
+    return scored.length > 0 ? scored : fallbackSearchKnowledge(query, limit);
+  } catch (error) {
+    console.warn("[RAG] Vector search failed, falling back to keyword search:", error);
+    return fallbackSearchKnowledge(query, limit);
+  }
 }
 
 // ============ Chat Messages ============

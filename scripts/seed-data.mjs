@@ -84,12 +84,24 @@ async function seedData() {
     ];
 
     for (const kb of knowledgeData) {
-      await connection.execute(
-        "INSERT INTO knowledge_base (title, content, category, keywords) VALUES (?, ?, ?, ?)",
-        [kb.title, kb.content, kb.category, kb.keywords]
+      const [existingKnowledge] = await connection.execute(
+        "SELECT id FROM knowledge_base WHERE title = ? LIMIT 1",
+        [kb.title]
       );
+
+      if (existingKnowledge.length > 0) {
+        await connection.execute(
+          "UPDATE knowledge_base SET content = ?, category = ?, keywords = ? WHERE id = ?",
+          [kb.content, kb.category, kb.keywords, existingKnowledge[0].id]
+        );
+      } else {
+        await connection.execute(
+          "INSERT INTO knowledge_base (title, content, category, keywords) VALUES (?, ?, ?, ?)",
+          [kb.title, kb.content, kb.category, kb.keywords]
+        );
+      }
     }
-    console.log(`已插入 ${knowledgeData.length} 条知识库数据`);
+    console.log(`已准备 ${knowledgeData.length} 条知识库数据`);
 
     // 3. 插入示例工单数据
     const ticketData = [
@@ -130,13 +142,21 @@ async function seedData() {
       },
     ];
 
-    for (const ticket of ticketData) {
-      await connection.execute(
-        "INSERT INTO tickets (userId, title, description, status, priority) VALUES (?, ?, ?, ?, ?)",
-        [ticket.userId, ticket.title, ticket.description, ticket.status, ticket.priority]
-      );
+    const [existingTickets] = await connection.execute(
+      "SELECT COUNT(*) AS count FROM tickets WHERE userId = ?",
+      [seedUserId]
+    );
+    if (existingTickets[0].count === 0) {
+      for (const ticket of ticketData) {
+        await connection.execute(
+          "INSERT INTO tickets (userId, title, description, status, priority) VALUES (?, ?, ?, ?, ?)",
+          [ticket.userId, ticket.title, ticket.description, ticket.status, ticket.priority]
+        );
+      }
+      console.log(`已插入 ${ticketData.length} 条工单数据`);
+    } else {
+      console.log("已存在示例工单，跳过工单插入");
     }
-    console.log(`已插入 ${ticketData.length} 条工单数据`);
 
     // 4. 插入示例工单备注
     const noteData = [
@@ -166,13 +186,21 @@ async function seedData() {
       },
     ];
 
-    for (const note of noteData) {
-      await connection.execute(
-        "INSERT INTO ticket_notes (ticketId, userId, content, noteType) VALUES (?, ?, ?, ?)",
-        [note.ticketId, note.userId, note.content, note.noteType]
-      );
+    const [existingNotes] = await connection.execute(
+      "SELECT COUNT(*) AS count FROM ticket_notes WHERE userId = ?",
+      [seedUserId]
+    );
+    if (existingNotes[0].count === 0) {
+      for (const note of noteData) {
+        await connection.execute(
+          "INSERT INTO ticket_notes (ticketId, userId, content, noteType) VALUES (?, ?, ?, ?)",
+          [note.ticketId, note.userId, note.content, note.noteType]
+        );
+      }
+      console.log(`已插入 ${noteData.length} 条工单备注数据`);
+    } else {
+      console.log("已存在示例工单备注，跳过备注插入");
     }
-    console.log(`已插入 ${noteData.length} 条工单备注数据`);
 
     console.log("\n数据初始化完成！");
   } catch (error) {

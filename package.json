@@ -13,7 +13,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit migrate",
-    "db:seed": "node scripts/seed-data.mjs"
+    "db:seed": "node scripts/seed-data.mjs",
+    "kb:embed": "tsx scripts/embed-knowledge.mjs",
+    "kb:embed:check": "tsx scripts/check-openai-embedding.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
