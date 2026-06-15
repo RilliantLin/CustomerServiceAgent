@@ -17,5 +17,10 @@ export const ENV = {
     process.env.OPENAI_BASE_URL ??
     "https://api.openai.com",
   openAiEmbeddingPath: process.env.OPENAI_EMBEDDING_PATH ?? "/v1/embeddings",
+  embeddingProvider: process.env.EMBEDDING_PROVIDER ?? "voyage",
+  voyageApiKey: process.env.VOYAGE_API_KEY ?? "",
+  voyageBaseUrl: process.env.VOYAGE_BASE_URL ?? "https://api.voyageai.com",
+  voyageEmbeddingModel: process.env.VOYAGE_EMBEDDING_MODEL ?? "voyage-3-large",
+  voyageEmbeddingPath: process.env.VOYAGE_EMBEDDING_PATH ?? "/v1/embeddings",
   ragEmbeddingsEnabled: process.env.RAG_EMBEDDINGS_ENABLED !== "false",
 };

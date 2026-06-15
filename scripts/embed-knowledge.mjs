@@ -2,6 +2,7 @@ import "dotenv/config";
 import {
   buildKnowledgeEmbeddingInput,
   createEmbedding,
+  getEmbeddingProviderConfig,
   parseEmbedding,
 } from "../server/_core/embeddings.ts";
 import {
@@ -10,13 +11,16 @@ import {
 } from "../server/db.ts";
 
 async function main() {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY is required to generate knowledge embeddings");
-  }
   if (process.env.RAG_EMBEDDINGS_ENABLED === "false") {
     throw new Error(
       "RAG_EMBEDDINGS_ENABLED=false, skip embedding backfill until the embedding endpoint is available"
     );
+  }
+  const config = getEmbeddingProviderConfig();
+  if (!config.apiKey) {
+    const envName =
+      config.provider === "voyage" ? "VOYAGE_API_KEY" : "OPENAI_API_KEY";
+    throw new Error(`${envName} is required to generate knowledge embeddings`);
   }
 
   const entries = await listKnowledgeEntries();
@@ -30,7 +34,7 @@ async function main() {
     }
 
     const input = buildKnowledgeEmbeddingInput(entry);
-    const embedding = await createEmbedding(input);
+    const embedding = await createEmbedding(input, "document");
     await updateKnowledgeEmbedding(entry.id, embedding);
     updated += 1;
     console.log(`Embedded #${entry.id}: ${entry.title}`);

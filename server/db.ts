@@ -270,7 +270,7 @@ export async function searchKnowledge(query: string, limit = 5) {
       return fallbackSearchKnowledge(query, limit);
     }
 
-    const queryEmbedding = await createEmbedding(query);
+    const queryEmbedding = await createEmbedding(query, "query");
     const scored = entries
       .map(entry => {
         const embedding = parseEmbedding(entry.embedding);

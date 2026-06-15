@@ -1,12 +1,12 @@
 import "dotenv/config";
-import { createEmbedding } from "../server/_core/embeddings.ts";
+import {
+  createEmbedding,
+  getEmbeddingProviderConfig,
+} from "../server/_core/embeddings.ts";
 import { ENV } from "../server/_core/env.ts";
 import { resolveOpenAiApiUrl } from "../server/_core/openai.ts";
 
 async function main() {
-  if (!ENV.openAiApiKey) {
-    throw new Error("OPENAI_API_KEY is required to check embeddings");
-  }
   if (!ENV.ragEmbeddingsEnabled) {
     console.log(
       "RAG_EMBEDDINGS_ENABLED=false; temporarily skipping embedding calls."
@@ -14,16 +14,25 @@ async function main() {
     return;
   }
 
-  const url = resolveOpenAiApiUrl(ENV.openAiEmbeddingPath, {
-    baseUrl: ENV.openAiEmbeddingBaseUrl,
+  const config = getEmbeddingProviderConfig();
+  if (!config.apiKey) {
+    const envName =
+      config.provider === "voyage" ? "VOYAGE_API_KEY" : "OPENAI_API_KEY";
+    throw new Error(`${envName} is required to check embeddings`);
+  }
+
+  const url = resolveOpenAiApiUrl(config.path, {
+    baseUrl: config.baseUrl,
   });
   const startedAt = Date.now();
 
+  console.log(`Embedding provider: ${config.provider}`);
   console.log(`Embedding endpoint: ${url}`);
-  console.log(`Embedding model: ${ENV.openAiEmbeddingModel}`);
+  console.log(`Embedding model: ${config.model}`);
 
   const embedding = await createEmbedding(
-    "客服知识库 embedding connectivity check"
+    "客服知识库 embedding connectivity check",
+    "query"
   );
 
   console.log(`Embedding dimension: ${embedding.length}`);

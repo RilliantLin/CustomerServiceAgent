@@ -12,8 +12,39 @@ type EmbeddingResponse = {
   }>;
 };
 
+type EmbeddingInputType = "query" | "document";
+
 export function isEmbeddingEnabled() {
-  return ENV.ragEmbeddingsEnabled && Boolean(ENV.openAiApiKey);
+  if (!ENV.ragEmbeddingsEnabled) return false;
+  if (ENV.embeddingProvider === "voyage") return Boolean(ENV.voyageApiKey);
+  if (ENV.embeddingProvider === "openai") return Boolean(ENV.openAiApiKey);
+  return false;
+}
+
+export function getEmbeddingProviderConfig() {
+  if (ENV.embeddingProvider === "voyage") {
+    return {
+      provider: "voyage",
+      apiKey: ENV.voyageApiKey,
+      baseUrl: ENV.voyageBaseUrl,
+      path: ENV.voyageEmbeddingPath,
+      model: ENV.voyageEmbeddingModel,
+    };
+  }
+
+  if (ENV.embeddingProvider === "openai") {
+    return {
+      provider: "openai",
+      apiKey: ENV.openAiApiKey,
+      baseUrl: ENV.openAiEmbeddingBaseUrl,
+      path: ENV.openAiEmbeddingPath,
+      model: ENV.openAiEmbeddingModel,
+    };
+  }
+
+  throw new Error(
+    `Unsupported EMBEDDING_PROVIDER "${ENV.embeddingProvider}". Use "voyage" or "openai".`
+  );
 }
 
 export function buildKnowledgeEmbeddingInput(entry: {
@@ -32,43 +63,61 @@ export function buildKnowledgeEmbeddingInput(entry: {
     .join("\n");
 }
 
-export async function createEmbedding(input: string): Promise<number[]> {
-  if (!ENV.openAiApiKey) {
-    throw new Error("OPENAI_API_KEY is required to generate embeddings");
+export async function createEmbedding(
+  input: string,
+  inputType: EmbeddingInputType = "document"
+): Promise<number[]> {
+  const config = getEmbeddingProviderConfig();
+
+  if (!config.apiKey) {
+    const envName =
+      config.provider === "voyage" ? "VOYAGE_API_KEY" : "OPENAI_API_KEY";
+    throw new Error(`${envName} is required to generate embeddings`);
   }
 
-  const url = resolveOpenAiApiUrl(ENV.openAiEmbeddingPath, {
-    baseUrl: ENV.openAiEmbeddingBaseUrl,
+  const url = resolveOpenAiApiUrl(config.path, {
+    baseUrl: config.baseUrl,
   });
+  const label =
+    config.provider === "voyage" ? "Voyage embedding" : "OpenAI embedding";
+  const body =
+    config.provider === "voyage"
+      ? {
+          model: config.model,
+          input,
+          input_type: inputType,
+        }
+      : {
+          model: config.model,
+          input,
+        };
+
   const response = await fetchWithBackoff(
     url,
     {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${ENV.openAiApiKey}`,
+        authorization: `Bearer ${config.apiKey}`,
       },
-      body: JSON.stringify({
-        model: ENV.openAiEmbeddingModel,
-        input,
-      }),
+      body: JSON.stringify(body),
     },
-    "OpenAI embedding"
+    label
   );
 
   if (!response.ok) {
     throw await buildOpenAiHttpError({
-      label: "OpenAI embedding",
+      label,
       response,
       url,
-      model: ENV.openAiEmbeddingModel,
+      model: config.model,
     });
   }
 
   const data = (await response.json()) as EmbeddingResponse;
   const embedding = data.data[0]?.embedding;
   if (!embedding || embedding.length === 0) {
-    throw new Error("OpenAI embedding response did not include a vector");
+    throw new Error(`${label} response did not include a vector`);
   }
 
   return embedding;
