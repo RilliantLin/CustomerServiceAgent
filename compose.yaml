@@ -22,7 +22,17 @@ services:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
     container_name: customer_service_agent_embeddings
     restart: unless-stopped
-    command: ["--model-id", "BAAI/bge-m3"]
+    command:
+      [
+        "--model-id",
+        "BAAI/bge-m3",
+        "--pooling",
+        "mean",
+        "--max-concurrent-requests",
+        "32",
+        "--max-batch-tokens",
+        "512",
+      ]
     ports:
       - "8080:80"
     volumes:
