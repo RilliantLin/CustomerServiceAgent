@@ -10,7 +10,7 @@ import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 export default function TicketCreate() {
-  const { user } = useAuth();
+  const { user } = useAuth({ redirectOnUnauthenticated: true });
   const [, setLocation] = useLocation();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");

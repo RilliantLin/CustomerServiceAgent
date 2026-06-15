@@ -11,17 +11,20 @@ import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 
+const ALL_STATUSES = "all_statuses";
+const ALL_PRIORITIES = "all_priorities";
+
 export default function TicketList() {
-  const { user } = useAuth();
+  const { user } = useAuth({ redirectOnUnauthenticated: true });
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [priorityFilter, setPriorityFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>(ALL_STATUSES);
+  const [priorityFilter, setPriorityFilter] = useState<string>(ALL_PRIORITIES);
 
   const { data: tickets, isLoading } = trpc.tickets.list.useQuery({
     search: search || undefined,
-    status: statusFilter || undefined,
-    priority: priorityFilter || undefined,
+    status: statusFilter === ALL_STATUSES ? undefined : statusFilter,
+    priority: priorityFilter === ALL_PRIORITIES ? undefined : priorityFilter,
     limit: 50,
   });
 
@@ -85,7 +88,7 @@ export default function TicketList() {
                   <SelectValue placeholder="按状态筛选" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">全部状态</SelectItem>
+                  <SelectItem value={ALL_STATUSES}>全部状态</SelectItem>
                   <SelectItem value="pending">待处理</SelectItem>
                   <SelectItem value="in_progress">处理中</SelectItem>
                   <SelectItem value="resolved">已解决</SelectItem>
@@ -97,7 +100,7 @@ export default function TicketList() {
                   <SelectValue placeholder="按优先级筛选" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">全部优先级</SelectItem>
+                  <SelectItem value={ALL_PRIORITIES}>全部优先级</SelectItem>
                   <SelectItem value="low">低</SelectItem>
                   <SelectItem value="medium">中</SelectItem>
                   <SelectItem value="high">高</SelectItem>
@@ -108,8 +111,8 @@ export default function TicketList() {
                 variant="outline"
                 onClick={() => {
                   setSearch("");
-                  setStatusFilter("");
-                  setPriorityFilter("");
+                  setStatusFilter(ALL_STATUSES);
+                  setPriorityFilter(ALL_PRIORITIES);
                 }}
               >
                 重置筛选

@@ -10,7 +10,7 @@ import { Streamdown } from "streamdown";
 import { toast } from "sonner";
 
 export default function SmartChat() {
-  const { user } = useAuth();
+  const { user } = useAuth({ redirectOnUnauthenticated: true });
   const [messages, setMessages] = useState<Array<{
     id: string;
     role: "user" | "assistant";
