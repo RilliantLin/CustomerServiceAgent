@@ -17,7 +17,7 @@ async function main() {
     );
   }
   const config = getEmbeddingProviderConfig();
-  if (!config.apiKey) {
+  if (config.requiresApiKey && !config.apiKey) {
     const envName =
       config.provider === "voyage" ? "VOYAGE_API_KEY" : "OPENAI_API_KEY";
     throw new Error(`${envName} is required to generate knowledge embeddings`);

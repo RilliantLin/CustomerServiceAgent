@@ -16,12 +16,24 @@ type EmbeddingInputType = "query" | "document";
 
 export function isEmbeddingEnabled() {
   if (!ENV.ragEmbeddingsEnabled) return false;
+  if (ENV.embeddingProvider === "local") return true;
   if (ENV.embeddingProvider === "voyage") return Boolean(ENV.voyageApiKey);
   if (ENV.embeddingProvider === "openai") return Boolean(ENV.openAiApiKey);
   return false;
 }
 
 export function getEmbeddingProviderConfig() {
+  if (ENV.embeddingProvider === "local") {
+    return {
+      provider: "local",
+      apiKey: ENV.localEmbeddingApiKey,
+      baseUrl: ENV.localEmbeddingBaseUrl,
+      path: ENV.localEmbeddingPath,
+      model: ENV.localEmbeddingModel,
+      requiresApiKey: false,
+    };
+  }
+
   if (ENV.embeddingProvider === "voyage") {
     return {
       provider: "voyage",
@@ -29,6 +41,7 @@ export function getEmbeddingProviderConfig() {
       baseUrl: ENV.voyageBaseUrl,
       path: ENV.voyageEmbeddingPath,
       model: ENV.voyageEmbeddingModel,
+      requiresApiKey: true,
     };
   }
 
@@ -39,11 +52,12 @@ export function getEmbeddingProviderConfig() {
       baseUrl: ENV.openAiEmbeddingBaseUrl,
       path: ENV.openAiEmbeddingPath,
       model: ENV.openAiEmbeddingModel,
+      requiresApiKey: true,
     };
   }
 
   throw new Error(
-    `Unsupported EMBEDDING_PROVIDER "${ENV.embeddingProvider}". Use "voyage" or "openai".`
+    `Unsupported EMBEDDING_PROVIDER "${ENV.embeddingProvider}". Use "local", "voyage", or "openai".`
   );
 }
 
@@ -69,7 +83,7 @@ export async function createEmbedding(
 ): Promise<number[]> {
   const config = getEmbeddingProviderConfig();
 
-  if (!config.apiKey) {
+  if (config.requiresApiKey && !config.apiKey) {
     const envName =
       config.provider === "voyage" ? "VOYAGE_API_KEY" : "OPENAI_API_KEY";
     throw new Error(`${envName} is required to generate embeddings`);
@@ -79,7 +93,11 @@ export async function createEmbedding(
     baseUrl: config.baseUrl,
   });
   const label =
-    config.provider === "voyage" ? "Voyage embedding" : "OpenAI embedding";
+    config.provider === "voyage"
+      ? "Voyage embedding"
+      : config.provider === "local"
+        ? "Local embedding"
+        : "OpenAI embedding";
   const body =
     config.provider === "voyage"
       ? {
@@ -91,15 +109,18 @@ export async function createEmbedding(
           model: config.model,
           input,
         };
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  if (config.apiKey) {
+    headers.authorization = `Bearer ${config.apiKey}`;
+  }
 
   const response = await fetchWithBackoff(
     url,
     {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${config.apiKey}`,
-      },
+      headers,
       body: JSON.stringify(body),
     },
     label

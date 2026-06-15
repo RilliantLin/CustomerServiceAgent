@@ -17,7 +17,12 @@ export const ENV = {
     process.env.OPENAI_BASE_URL ??
     "https://api.openai.com",
   openAiEmbeddingPath: process.env.OPENAI_EMBEDDING_PATH ?? "/v1/embeddings",
-  embeddingProvider: process.env.EMBEDDING_PROVIDER ?? "voyage",
+  embeddingProvider: process.env.EMBEDDING_PROVIDER ?? "local",
+  localEmbeddingApiKey: process.env.LOCAL_EMBEDDING_API_KEY ?? "",
+  localEmbeddingBaseUrl:
+    process.env.LOCAL_EMBEDDING_BASE_URL ?? "http://localhost:8080",
+  localEmbeddingModel: process.env.LOCAL_EMBEDDING_MODEL ?? "BAAI/bge-m3",
+  localEmbeddingPath: process.env.LOCAL_EMBEDDING_PATH ?? "/v1/embeddings",
   voyageApiKey: process.env.VOYAGE_API_KEY ?? "",
   voyageBaseUrl: process.env.VOYAGE_BASE_URL ?? "https://api.voyageai.com",
   voyageEmbeddingModel: process.env.VOYAGE_EMBEDDING_MODEL ?? "voyage-3-large",
