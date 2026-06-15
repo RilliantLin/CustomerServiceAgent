@@ -2,11 +2,12 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLocation } from "wouter";
-import { getLoginUrl } from "@/const";
+import { getDevLoginUrl, getLoginUrl, isDevLoginEnabled } from "@/const";
 
 export default function Home() {
   const { user, isAuthenticated, logout, loading } = useAuth();
   const [, setLocation] = useLocation();
+  const showDevLogin = isDevLoginEnabled();
 
   if (loading) {
     return (
@@ -26,12 +27,29 @@ export default function Home() {
           {/* 导航栏 */}
           <div className="flex justify-between items-center mb-20">
             <div className="text-2xl font-bold text-gray-900">客服工单系统</div>
-            <Button
-              onClick={() => window.location.href = getLoginUrl()}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              登录
-            </Button>
+            {showDevLogin ? (
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => window.location.href = getDevLoginUrl("user")}
+                >
+                  本地用户登录
+                </Button>
+                <Button
+                  onClick={() => window.location.href = getDevLoginUrl("admin")}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  本地管理员登录
+                </Button>
+              </div>
+            ) : (
+              <Button
+                onClick={() => window.location.href = getLoginUrl()}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                登录
+              </Button>
+            )}
           </div>
 
           {/* 主要内容 */}
@@ -61,12 +79,32 @@ export default function Home() {
                   <span className="text-gray-700">高效的知识库搜索和检索</span>
                 </div>
               </div>
-              <Button
-                onClick={() => window.location.href = getLoginUrl()}
-                className="mt-8 bg-blue-600 hover:bg-blue-700 text-lg px-8 py-6"
-              >
-                开始使用
-              </Button>
+              <div className="mt-8 flex flex-wrap gap-3">
+                {showDevLogin ? (
+                  <>
+                    <Button
+                      onClick={() => window.location.href = getDevLoginUrl("user")}
+                      className="bg-blue-600 hover:bg-blue-700 text-lg px-8 py-6"
+                    >
+                      本地用户登录
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => window.location.href = getDevLoginUrl("admin")}
+                      className="text-lg px-8 py-6"
+                    >
+                      本地管理员登录
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    onClick={() => window.location.href = getLoginUrl()}
+                    className="bg-blue-600 hover:bg-blue-700 text-lg px-8 py-6"
+                  >
+                    开始使用
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* 功能卡片 */}

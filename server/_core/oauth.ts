@@ -9,7 +9,44 @@ function getQueryParam(req: Request, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function registerDevLoginRoutes(app: Express) {
+  app.get("/api/dev-login", async (req: Request, res: Response) => {
+    if (process.env.NODE_ENV !== "development") {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const requestedRole = getQueryParam(req, "role");
+    const role = requestedRole === "admin" ? "admin" : "user";
+    const openId = role === "admin" ? "local-dev-admin" : "local-dev-user";
+    const name = role === "admin" ? "本地开发管理员" : "本地开发用户";
+
+    await db.upsertUser({
+      openId,
+      name,
+      email: `${openId}@example.local`,
+      loginMethod: "dev",
+      role,
+      lastSignedIn: new Date(),
+    });
+
+    const sessionToken = await sdk.createSessionToken(openId, {
+      name,
+      expiresInMs: ONE_YEAR_MS,
+    });
+    const cookieOptions = getSessionCookieOptions(req);
+
+    res.cookie(COOKIE_NAME, sessionToken, {
+      ...cookieOptions,
+      maxAge: ONE_YEAR_MS,
+    });
+    res.redirect(302, "/");
+  });
+}
+
 export function registerOAuthRoutes(app: Express) {
+  registerDevLoginRoutes(app);
+
   app.get("/api/oauth/callback", async (req: Request, res: Response) => {
     const code = getQueryParam(req, "code");
     const state = getQueryParam(req, "state");
