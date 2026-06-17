@@ -23,41 +23,7 @@ export default function SmartChat() {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const sendMessageMutation = trpc.chat.sendMessage.useMutation();
   const { data: chatHistory } = trpc.chat.getHistory.useQuery({});
-
-  const streamAssistantMessage = (
-    id: string,
-    content: string,
-    relatedKnowledge: any[] = []
-  ) => {
-    const characters = Array.from(content || "抱歉，我无法处理您的请求。");
-    let index = 0;
-
-    const tick = () => {
-      index += 1;
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === id
-            ? {
-                ...message,
-                content: characters.slice(0, index).join(""),
-                relatedKnowledge: index >= characters.length ? relatedKnowledge : [],
-                isStreaming: index < characters.length,
-              }
-            : message
-        )
-      );
-
-      if (index < characters.length) {
-        window.setTimeout(tick, 18);
-      } else {
-        setIsLoading(false);
-      }
-    };
-
-    tick();
-  };
 
   // 加载聊天历史
   useEffect(() => {
@@ -103,15 +69,111 @@ export default function SmartChat() {
     ]);
 
     try {
-      const result = await sendMessageMutation.mutateAsync({
-        content: userMessage,
+      const response = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ content: userMessage }),
       });
 
-      streamAssistantMessage(
-        assistantId,
-        result.assistantMessage,
-        result.relatedKnowledge
+      if (!response.ok || !response.body) {
+        throw new Error("发送消息失败，请稍后重试");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let receivedContent = false;
+
+      const handleEvent = (event: string) => {
+        const data = event
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trimStart())
+          .join("\n");
+
+        if (!data) return;
+
+        const payload = JSON.parse(data);
+        if (payload.type === "meta") {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    relatedKnowledge: payload.relatedKnowledge ?? [],
+                  }
+                : message
+            )
+          );
+          return;
+        }
+
+        if (payload.type === "delta") {
+          receivedContent = true;
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    content: `${message.content}${payload.content ?? ""}`,
+                    isStreaming: true,
+                  }
+                : message
+            )
+          );
+          return;
+        }
+
+        if (payload.type === "done") {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    isStreaming: false,
+                  }
+                : message
+            )
+          );
+          return;
+        }
+
+        if (payload.type === "error") {
+          throw new Error(payload.message || "发送消息失败，请稍后重试");
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
+        events.forEach(handleEvent);
+      }
+
+      if (buffer.trim()) {
+        handleEvent(buffer);
+      }
+
+      if (!receivedContent) {
+        throw new Error("未收到 AI 回复，请稍后重试");
+      }
+
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === assistantId
+            ? {
+                ...message,
+                isStreaming: false,
+              }
+            : message
+        )
       );
+      setIsLoading(false);
     } catch (error: any) {
       setMessages((prev) => prev.filter((message) => message.id !== assistantId));
       toast.error(error?.message || "发送消息失败，请稍后重试");

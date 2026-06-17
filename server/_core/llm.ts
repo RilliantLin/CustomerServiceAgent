@@ -76,6 +76,12 @@ export type InvokeParams = {
   reasoning?: Record<string, unknown>;
 };
 
+export type StreamChunk = {
+  type: "content" | "done";
+  content?: string;
+  model?: string;
+};
+
 export type ToolCall = {
   id: string;
   type: "function";
@@ -311,9 +317,28 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   );
 }
 
-async function invokeManusLLM(params: InvokeParams): Promise<InvokeResult> {
-  assertManusApiKey();
+export async function* streamLLM(
+  params: InvokeParams,
+  signal?: AbortSignal
+): AsyncGenerator<StreamChunk> {
+  const provider = ENV.llmProvider.trim().toLowerCase();
 
+  if (provider === "openai") {
+    yield* streamOpenAiChatCompletions(params, signal);
+    return;
+  }
+
+  if (provider === "manus" || provider === "forge") {
+    yield* streamManusLLM(params, signal);
+    return;
+  }
+
+  throw new Error(
+    `Unsupported LLM_PROVIDER "${ENV.llmProvider}". Use "openai" or "manus".`
+  );
+}
+
+const createChatCompletionPayload = (params: InvokeParams) => {
   const {
     messages,
     tools,
@@ -372,6 +397,126 @@ async function invokeManusLLM(params: InvokeParams): Promise<InvokeResult> {
   if (normalizedResponseFormat) {
     payload.response_format = normalizedResponseFormat;
   }
+
+  return payload;
+};
+
+async function* parseSseResponse(
+  response: Response
+): AsyncGenerator<StreamChunk> {
+  if (!response.body) {
+    throw new Error("LLM stream response has no body");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? "";
+
+    for (const event of events) {
+      const data = event
+        .split("\n")
+        .filter(line => line.startsWith("data:"))
+        .map(line => line.slice(5).trimStart())
+        .join("\n");
+
+      if (!data) continue;
+      if (data === "[DONE]") {
+        yield { type: "done" };
+        continue;
+      }
+
+      const parsed = JSON.parse(data);
+      const delta = parsed.choices?.[0]?.delta;
+      const content = delta?.content ?? delta?.text ?? parsed.delta ?? "";
+      if (typeof content === "string" && content.length > 0) {
+        yield {
+          type: "content",
+          content,
+          model: typeof parsed.model === "string" ? parsed.model : undefined,
+        };
+      }
+    }
+  }
+}
+
+async function* streamManusLLM(
+  params: InvokeParams,
+  signal?: AbortSignal
+): AsyncGenerator<StreamChunk> {
+  assertManusApiKey();
+
+  const payload: Record<string, unknown> = {
+    ...createChatCompletionPayload(params),
+    stream: true,
+  };
+
+  const response = await fetchWithBackoff(resolveManusApiUrl(), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${ENV.forgeApiKey}`,
+    },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `LLM stream failed: ${response.status} ${response.statusText} – ${errorText}`
+    );
+  }
+
+  yield* parseSseResponse(response);
+}
+
+async function* streamOpenAiChatCompletions(
+  params: InvokeParams,
+  signal?: AbortSignal
+): AsyncGenerator<StreamChunk> {
+  assertOpenAiApiKey();
+
+  const payload: Record<string, unknown> = {
+    ...createChatCompletionPayload({
+      ...params,
+      model: params.model || ENV.openAiModel,
+    }),
+    stream: true,
+  };
+  const url = resolveOpenAiApiUrl("/v1/chat/completions");
+  const response = await fetchWithBackoff(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${ENV.openAiApiKey}`,
+    },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw await buildOpenAiHttpError({
+      label: "OpenAI stream",
+      response,
+      url,
+      model: String(payload.model ?? ENV.openAiModel),
+    });
+  }
+
+  yield* parseSseResponse(response);
+}
+
+async function invokeManusLLM(params: InvokeParams): Promise<InvokeResult> {
+  assertManusApiKey();
+  const payload = createChatCompletionPayload(params);
 
   const response = await fetchWithBackoff(resolveManusApiUrl(), {
     method: "POST",
