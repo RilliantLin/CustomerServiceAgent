@@ -170,6 +170,12 @@ export default function AdminDashboard() {
             >
               智能客服
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => setLocation("/admin/knowledge")}
+            >
+              知识库
+            </Button>
           </CardContent>
         </Card>
       </div>

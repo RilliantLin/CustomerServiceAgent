@@ -237,6 +237,15 @@ export const appRouter = router({
 
   // ============ Knowledge Base Router ============
   knowledge: router({
+    // 获取知识库列表（仅管理员）
+    list: protectedProcedure
+      .query(async ({ ctx }) => {
+        if (ctx.user.role !== "admin") {
+          throw new Error("Unauthorized");
+        }
+        return await db.listKnowledgeEntries();
+      }),
+
     // 搜索知识库
     search: publicProcedure
       .input(z.object({

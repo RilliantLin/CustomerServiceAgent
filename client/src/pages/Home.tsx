@@ -235,22 +235,41 @@ export default function Home() {
 
           {/* 管理员仪表盘 */}
           {user?.role === "admin" && (
-            <Card
-              className="cursor-pointer hover:shadow-lg transition-shadow"
-              onClick={() => setLocation("/admin/dashboard")}
-            >
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <span className="text-3xl">📊</span>
-                  管理员仪表盘
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-gray-600">
-                  查看工单统计和系统概览
-                </p>
-              </CardContent>
-            </Card>
+            <>
+              <Card
+                className="cursor-pointer hover:shadow-lg transition-shadow"
+                onClick={() => setLocation("/admin/dashboard")}
+              >
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <span className="text-3xl">📊</span>
+                    管理员仪表盘
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-gray-600">
+                    查看工单统计和系统概览
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card
+                className="cursor-pointer hover:shadow-lg transition-shadow"
+                onClick={() => setLocation("/admin/knowledge")}
+              >
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <span className="text-3xl">🔍</span>
+                    知识库
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-gray-600">
+                    查看和搜索客服知识条目
+                  </p>
+                </CardContent>
+              </Card>
+            </>
           )}
         </div>
       </div>
