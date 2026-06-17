@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
+import PageNav from "@/components/PageNav";
 import { Streamdown } from "streamdown";
 import { toast } from "sonner";
 
@@ -16,6 +17,7 @@ export default function SmartChat() {
     role: "user" | "assistant";
     content: string;
     relatedKnowledge?: any[];
+    isStreaming?: boolean;
   }>>([]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -23,6 +25,39 @@ export default function SmartChat() {
 
   const sendMessageMutation = trpc.chat.sendMessage.useMutation();
   const { data: chatHistory } = trpc.chat.getHistory.useQuery({});
+
+  const streamAssistantMessage = (
+    id: string,
+    content: string,
+    relatedKnowledge: any[] = []
+  ) => {
+    const characters = Array.from(content || "抱歉，我无法处理您的请求。");
+    let index = 0;
+
+    const tick = () => {
+      index += 1;
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === id
+            ? {
+                ...message,
+                content: characters.slice(0, index).join(""),
+                relatedKnowledge: index >= characters.length ? relatedKnowledge : [],
+                isStreaming: index < characters.length,
+              }
+            : message
+        )
+      );
+
+      if (index < characters.length) {
+        window.setTimeout(tick, 18);
+      } else {
+        setIsLoading(false);
+      }
+    };
+
+    tick();
+  };
 
   // 加载聊天历史
   useEffect(() => {
@@ -47,46 +82,55 @@ export default function SmartChat() {
     if (!inputValue.trim()) return;
 
     const userMessage = inputValue;
+    const now = Date.now();
+    const assistantId = `${now + 1}`;
     setInputValue("");
     setIsLoading(true);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `${now}`,
+        role: "user",
+        content: userMessage,
+      },
+      {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        relatedKnowledge: [],
+        isStreaming: true,
+      },
+    ]);
 
     try {
       const result = await sendMessageMutation.mutateAsync({
         content: userMessage,
       });
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          role: "user",
-          content: userMessage,
-        },
-        {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: result.assistantMessage,
-          relatedKnowledge: result.relatedKnowledge,
-        },
-      ]);
+      streamAssistantMessage(
+        assistantId,
+        result.assistantMessage,
+        result.relatedKnowledge
+      );
     } catch (error: any) {
+      setMessages((prev) => prev.filter((message) => message.id !== assistantId));
       toast.error(error?.message || "发送消息失败，请稍后重试");
-    } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-4xl mx-auto h-screen flex flex-col">
+    <div className="h-screen overflow-hidden bg-gray-50 pt-14">
+      <PageNav />
+      <div className="mx-auto flex h-[calc(100vh-3.5rem)] max-w-4xl flex-col px-4 py-4 sm:px-6">
         {/* 页面标题 */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">智能客服助手</h1>
+        <div className="mb-4 shrink-0">
+          <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">智能客服助手</h1>
           <p className="text-gray-600 mt-1">基于 AI 和知识库的智能问答系统</p>
         </div>
 
         {/* 聊天容器 */}
-        <Card className="flex-1 flex flex-col mb-6 overflow-hidden">
+        <Card className="mb-4 flex min-h-0 flex-1 flex-col overflow-hidden">
           <CardContent className="flex-1 overflow-y-auto p-6 space-y-4">
             {messages.length === 0 ? (
               <div className="flex items-center justify-center h-full text-center">
@@ -113,7 +157,14 @@ export default function SmartChat() {
                           : "bg-gray-200 text-gray-900"
                       }`}
                     >
-                      <Streamdown>{message.content}</Streamdown>
+                      {message.content ? (
+                        <Streamdown>{message.content}</Streamdown>
+                      ) : (
+                        <div className="flex items-center gap-2 text-gray-600">
+                          <Spinner className="h-4 w-4" />
+                          <span className="text-sm">正在思考...</span>
+                        </div>
+                      )}
 
                       {/* 显示关联的知识库 */}
                       {message.relatedKnowledge && message.relatedKnowledge.length > 0 && (
@@ -134,13 +185,6 @@ export default function SmartChat() {
                     </div>
                   </div>
                 ))}
-                {isLoading && (
-                  <div className="flex justify-start">
-                    <div className="bg-gray-200 text-gray-900 px-4 py-3 rounded-lg">
-                      <Spinner className="w-4 h-4" />
-                    </div>
-                  </div>
-                )}
                 <div ref={messagesEndRef} />
               </>
             )}
@@ -148,7 +192,7 @@ export default function SmartChat() {
         </Card>
 
         {/* 输入框 */}
-        <form onSubmit={handleSendMessage} className="flex gap-2">
+        <form onSubmit={handleSendMessage} className="flex shrink-0 gap-2 pb-2">
           <Input
             type="text"
             placeholder="输入您的问题..."

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import PageNav from "@/components/PageNav";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 
@@ -39,17 +40,9 @@ export default function TicketCreate() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-2xl mx-auto">
-        {/* 返回按钮 */}
-        <Button
-          variant="outline"
-          onClick={() => setLocation("/tickets")}
-          className="mb-6"
-        >
-          ← 返回列表
-        </Button>
-
+    <div className="min-h-screen bg-gray-50 pt-14">
+      <PageNav />
+      <div className="max-w-2xl mx-auto px-6 py-6">
         {/* 创建工单表单 */}
         <Card>
           <CardHeader>

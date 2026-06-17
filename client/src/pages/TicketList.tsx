@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
+import PageNav from "@/components/PageNav";
 import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
@@ -57,10 +58,11 @@ export default function TicketList() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gray-50 pt-14">
+      <PageNav />
       <div className="max-w-6xl mx-auto">
         {/* 页面标题 */}
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex justify-between items-center mb-8 px-6 pt-6">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">工单列表</h1>
             <p className="text-gray-600 mt-1">管理和跟踪您的服务工单</p>
@@ -74,7 +76,7 @@ export default function TicketList() {
         </div>
 
         {/* 筛选和搜索 */}
-        <Card className="mb-6">
+        <Card className="mx-6 mb-6">
           <CardContent className="pt-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Input
@@ -123,17 +125,17 @@ export default function TicketList() {
 
         {/* 工单列表 */}
         {isLoading ? (
-          <div className="flex justify-center items-center h-64">
+          <div className="mx-6 flex justify-center items-center h-64">
             <Spinner />
           </div>
         ) : !tickets || tickets.length === 0 ? (
-          <Card>
+          <Card className="mx-6">
             <CardContent className="pt-12 pb-12 text-center">
               <p className="text-gray-500 text-lg">暂无工单</p>
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4 px-6 pb-6">
             {tickets.map((ticket: any) => (
               <Card
                 key={ticket.id}

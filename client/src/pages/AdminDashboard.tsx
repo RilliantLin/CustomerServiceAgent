@@ -2,7 +2,8 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import PageNav from "@/components/PageNav";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 
@@ -14,8 +15,9 @@ export default function AdminDashboard() {
 
   if (!user || user.role !== "admin") {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-4xl mx-auto">
+      <div className="min-h-screen bg-gray-50 pt-14">
+        <PageNav />
+        <div className="max-w-4xl mx-auto px-6 py-6">
           <Card>
             <CardContent className="pt-12 pb-12 text-center">
               <p className="text-gray-500 text-lg">您没有权限访问此页面</p>
@@ -35,8 +37,11 @@ export default function AdminDashboard() {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <Spinner />
+      <div className="min-h-screen bg-gray-50 pt-14">
+        <PageNav />
+        <div className="flex justify-center items-center h-[calc(100vh-3.5rem)]">
+          <Spinner />
+        </div>
       </div>
     );
   }
@@ -56,8 +61,9 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gray-50 pt-14">
+      <PageNav />
+      <div className="max-w-7xl mx-auto px-6 py-6">
         {/* 页面标题 */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">管理员仪表盘</h1>

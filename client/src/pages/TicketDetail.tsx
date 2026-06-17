@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
+import PageNav from "@/components/PageNav";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -92,16 +93,20 @@ export default function TicketDetail({ params }: TicketDetailProps) {
 
   if (ticketLoading) {
     return (
-      <div className="flex justify-center items-center h-screen">
+      <div className="min-h-screen bg-gray-50 pt-14">
+        <PageNav />
+        <div className="flex justify-center items-center h-[calc(100vh-3.5rem)]">
         <Spinner />
+        </div>
       </div>
     );
   }
 
   if (!ticket) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-4xl mx-auto">
+      <div className="min-h-screen bg-gray-50 pt-14">
+        <PageNav />
+        <div className="max-w-4xl mx-auto px-6 py-6">
           <Card>
             <CardContent className="pt-12 pb-12 text-center">
               <p className="text-gray-500 text-lg">工单不存在</p>
@@ -120,17 +125,9 @@ export default function TicketDetail({ params }: TicketDetailProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-4xl mx-auto">
-        {/* 返回按钮 */}
-        <Button
-          variant="outline"
-          onClick={() => setLocation("/tickets")}
-          className="mb-6"
-        >
-          ← 返回列表
-        </Button>
-
+    <div className="min-h-screen bg-gray-50 pt-14">
+      <PageNav />
+      <div className="max-w-4xl mx-auto px-6 py-6">
         {/* 工单基本信息 */}
         <Card className="mb-6">
           <CardHeader>
