@@ -48,6 +48,12 @@ describe("keyword RAG ranking", () => {
 
     expect(result[0]?.title).toBe(expectedTitle);
   });
+
+  it("does not pad keyword results with unrelated entries", () => {
+    const result = rankKnowledgeEntriesByKeyword("密码", entries, 50);
+
+    expect(result.map(entry => entry.title)).toEqual(["如何重置密码？"]);
+  });
 });
 
 describe("chat prompt helpers", () => {

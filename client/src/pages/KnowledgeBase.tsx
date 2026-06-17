@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -11,11 +11,25 @@ import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 
+function useDebouncedValue<T>(value: T, delay: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedValue(value), delay);
+    return () => window.clearTimeout(timer);
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
 export default function KnowledgeBase() {
   const { user } = useAuth({ redirectOnUnauthenticated: true });
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
-  const query = search.trim();
+  const rawQuery = search.trim();
+  const debouncedSearch = useDebouncedValue(search, 300);
+  const query = rawQuery.length === 0 ? "" : debouncedSearch.trim();
+  const isDebouncing = rawQuery.length > 0 && rawQuery !== query;
 
   const { data: entries, isLoading: listLoading } = trpc.knowledge.list.useQuery();
   const { data: searchResults, isLoading: searchLoading } = trpc.knowledge.search.useQuery(
@@ -24,7 +38,7 @@ export default function KnowledgeBase() {
   );
 
   const visibleEntries = query.length > 0 ? searchResults : entries;
-  const isLoading = query.length > 0 ? searchLoading : listLoading;
+  const isLoading = isDebouncing || (query.length > 0 ? searchLoading : listLoading);
 
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();

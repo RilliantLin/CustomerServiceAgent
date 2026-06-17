@@ -255,6 +255,10 @@ async function fallbackSearchKnowledge(query: string, limit: number) {
     .limit(limit);
 }
 
+export async function searchKnowledgeByKeyword(query: string, limit = 5) {
+  return fallbackSearchKnowledge(query, limit);
+}
+
 type KeywordSearchEntry = {
   title: string;
   content: string;

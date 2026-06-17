@@ -246,14 +246,17 @@ export const appRouter = router({
         return await db.listKnowledgeEntries();
       }),
 
-    // 搜索知识库
-    search: publicProcedure
+    // 搜索知识库（仅管理员）
+    search: protectedProcedure
       .input(z.object({
         query: z.string().min(1),
         limit: z.number().optional().default(5),
       }))
-      .query(async ({ input }) => {
-        return await db.searchKnowledge(input.query, input.limit);
+      .query(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") {
+          throw new Error("Unauthorized");
+        }
+        return await db.searchKnowledgeByKeyword(input.query, input.limit);
       }),
 
     // 按分类获取知识库
