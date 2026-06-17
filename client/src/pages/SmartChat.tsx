@@ -31,7 +31,7 @@ export default function SmartChat() {
         id: msg.id.toString(),
         role: msg.role,
         content: msg.content,
-        relatedKnowledge: msg.relatedKnowledgeIds ? JSON.parse(msg.relatedKnowledgeIds) : [],
+        relatedKnowledge: msg.relatedKnowledge ?? [],
       }));
       setMessages(formattedHistory);
     }
@@ -69,8 +69,8 @@ export default function SmartChat() {
           relatedKnowledge: result.relatedKnowledge,
         },
       ]);
-    } catch (error) {
-      toast.error("发送消息失败");
+    } catch (error: any) {
+      toast.error(error?.message || "发送消息失败，请稍后重试");
     } finally {
       setIsLoading(false);
     }

@@ -247,11 +247,13 @@
 
 #### 搜索策略优化
 
-- **当前策略**：关键词匹配（LIKE 查询）
-- **升级方案**：
-  - 实现向量嵌入（embedding）
-  - 使用向量数据库（如 Pinecone、Weaviate）
-  - 基于余弦相似度进行检索
+- **当前策略**：本地向量检索优先，关键词匹配兜底
+- **实现方式**：
+  - 使用本地 `BAAI/bge-m3` embedding 模型生成查询和知识库向量
+  - 通过 Docker Compose 启动 `text-embeddings-inference` 服务
+  - 将知识库向量存储在 MySQL `knowledge_base.embedding` JSON 字段
+  - 在 Node 侧计算余弦相似度并返回相关条目
+  - 当本地 embedding 服务不可用或条目未回填向量时，自动回退到关键词 LIKE 搜索
 
 ### Agent 的限制与注意事项
 
@@ -454,41 +456,50 @@ faqCategories: router({
 
 ### 扩展 Agent 能力
 
-#### 升级到向量检索（RAG）
+#### 本地向量检索（RAG）
 
-**当前实现**：基于关键词的文本匹配
-
-```typescript
-// 简单的 LIKE 查询
-const results = await db.query.knowledgeBase.findMany({
-  where: like(knowledgeBase.keywords, `%${query}%`),
-  limit: 3,
-});
-```
-
-**升级方案**：向量相似度检索
+**当前实现**：本地 `BAAI/bge-m3` 向量检索 + MySQL JSON 向量存储
 
 ```typescript
-// 1. 为知识库条目生成 embedding
-const embedding = await generateEmbedding(kb.content);
+// 1. 查询时生成 query embedding
+const queryEmbedding = await createEmbedding(query, "query");
 
-// 2. 存储 embedding 到向量数据库
-await vectorDb.insert({
-  id: kb.id,
-  vector: embedding,
-  metadata: { title: kb.title, category: kb.category },
-});
+// 2. 从 MySQL 读取知识库条目的 embedding
+const entries = await db.select().from(knowledgeBase);
 
-// 3. 查询时进行向量相似度搜索
-const userEmbedding = await generateEmbedding(userQuery);
-const results = await vectorDb.search(userEmbedding, { limit: 3 });
+// 3. 在 Node 侧计算余弦相似度
+const results = entries
+  .map(entry => ({
+    entry,
+    score: cosineSimilarity(queryEmbedding, parseEmbedding(entry.embedding)),
+  }))
+  .sort((a, b) => b.score - a.score)
+  .slice(0, 3);
 ```
 
-**推荐工具**：
+**知识库向量回填**：
 
-- Pinecone：完全托管的向量数据库
-- Weaviate：开源向量数据库
-- Milvus：高性能向量数据库
+```bash
+# 检查本地 embedding 服务是否可用
+npm run kb:embed:check
+
+# 为未生成向量的知识库条目回填 embedding
+npm run kb:embed
+```
+
+**本地 embedding 服务**：
+
+- 服务由 `compose.yaml` 中的 `embeddings` 容器提供
+- 模型：`BAAI/bge-m3`
+- API：OpenAI-compatible `/v1/embeddings`
+- 默认地址：`http://localhost:8080/v1/embeddings`
+- 当前输出维度：1024
+
+**后续可选升级**：
+
+- 数据量增长后，可迁移到专用向量数据库（如 Milvus、Weaviate、Pinecone）
+- 可增加 RAG 调试页面展示召回分数和命中文档
+- 可增加 embedding 版本字段，便于模型升级后批量重建向量
 
 #### 实现多轮对话上下文
 
@@ -594,6 +605,16 @@ describe("TicketList", () => {
 # 安装依赖
 pnpm install
 
+# 启动 MySQL 和本地 embedding 服务
+docker compose up -d mysql embeddings
+
+# 初始化知识库数据
+npm run db:seed
+
+# 检查并回填知识库向量
+npm run kb:embed:check
+npm run kb:embed
+
 # 启动开发服务器
 pnpm dev
 
@@ -632,9 +653,40 @@ BUILT_IN_FORGE_API_KEY=your-api-key
 #### 可选环境变量
 
 ```
-LLM_MODEL=claude-3-sonnet  # 指定 LLM 模型
-KNOWLEDGE_BASE_CACHE_TTL=3600  # 知识库缓存时间（秒）
+LLM_PROVIDER=openai
+OPENAI_API_KEY=your-openai-compatible-api-key
+OPENAI_BASE_URL=https://api.openai.com
+OPENAI_MODEL=gpt-5.5
+
+EMBEDDING_PROVIDER=local
+LOCAL_EMBEDDING_BASE_URL=http://localhost:8080
+LOCAL_EMBEDDING_MODEL=BAAI/bge-m3
+LOCAL_EMBEDDING_PATH=/v1/embeddings
+LOCAL_EMBEDDING_API_KEY=  # 本地服务需要鉴权时填写
+
+RAG_EMBEDDINGS_ENABLED=true
+KNOWLEDGE_BASE_CACHE_TTL=3600
 ```
+
+#### 本地 embedding 服务
+
+本地 RAG 使用 Docker Compose 中的 `embeddings` 服务：
+
+```bash
+# 启动服务
+docker compose up -d embeddings
+
+# 查看服务状态
+docker compose ps
+
+# 查看模型服务日志
+docker logs customer_service_agent_embeddings
+
+# 验证 embedding 连通性
+npm run kb:embed:check
+```
+
+首次启动会下载 `BAAI/bge-m3` 模型权重，耗时取决于网络。权重会缓存在 Docker volume `tei_data` 中，后续重启会明显更快。
 
 ### 监控与日志
 
@@ -707,7 +759,7 @@ mysql -u user -p database < backup.sql
 
 #### 短期（1-3 个月）
 
-- [ ] 实现向量检索 RAG
+- [x] 实现本地 `BAAI/bge-m3` 向量检索 RAG
 - [ ] 添加多轮对话上下文
 - [ ] 实现工单分配给客服
 - [ ] 添加工单优先级自动调整

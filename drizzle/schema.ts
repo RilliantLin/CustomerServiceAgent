@@ -98,6 +98,9 @@ export const chatMessages = mysqlTable("chat_messages", {
   role: mysqlEnum("role", ["user", "assistant"]).notNull(), // 消息角色
   content: text("content").notNull(), // 消息内容
   relatedKnowledgeIds: json("relatedKnowledgeIds"), // 关联的知识库 ID 列表
+  relatedKnowledgeSnapshot: json("relatedKnowledgeSnapshot"), // 保存回答时引用的知识库标题/分类快照
+  llmProvider: varchar("llmProvider", { length: 32 }), // 生成该回复的 LLM provider
+  llmModel: varchar("llmModel", { length: 128 }), // 生成该回复的模型
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({
   userIdIdx: index("idx_userId_chat").on(table.userId),

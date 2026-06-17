@@ -223,6 +223,16 @@ export async function listKnowledgeEntries() {
   return db.select().from(knowledgeBase);
 }
 
+export async function getKnowledgeByIds(ids: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const uniqueIds = Array.from(new Set(ids)).filter(Number.isFinite);
+  if (uniqueIds.length === 0) return [];
+
+  return db.select().from(knowledgeBase).where(inArray(knowledgeBase.id, uniqueIds));
+}
+
 export async function updateKnowledgeEmbedding(id: number, embedding: number[]) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -236,15 +246,87 @@ async function fallbackSearchKnowledge(query: string, limit: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const titleResults = await db.select().from(knowledgeBase)
-    .where(like(knowledgeBase.title, `%${query}%`))
-    .limit(limit);
-
-  if (titleResults.length > 0) return titleResults;
+  const entries = await db.select().from(knowledgeBase);
+  const ranked = rankKnowledgeEntriesByKeyword(query, entries, limit);
+  if (ranked.length > 0) return ranked;
 
   return db.select().from(knowledgeBase)
-    .where(like(knowledgeBase.keywords, `%${query}%`))
+    .where(like(knowledgeBase.title, `%${query}%`))
     .limit(limit);
+}
+
+type KeywordSearchEntry = {
+  title: string;
+  content: string;
+  category: string;
+  keywords?: string | null;
+};
+
+const normalizeSearchText = (value: string) =>
+  value.toLowerCase().replace(/\s+/g, "");
+
+const getSearchTerms = (query: string, entries: KeywordSearchEntry[]) => {
+  const normalizedQuery = normalizeSearchText(query);
+  const terms = new Set<string>();
+
+  for (const part of query.toLowerCase().split(/[,\s，。！？!?、;；:：/\\|]+/)) {
+    const term = part.trim();
+    if (term.length >= 2) terms.add(term);
+  }
+
+  for (const entry of entries) {
+    const candidates = [
+      entry.title,
+      entry.category,
+      ...(entry.keywords ?? "").split(/[,\s，、]+/),
+    ];
+
+    for (const candidate of candidates) {
+      const term = normalizeSearchText(candidate);
+      if (term.length >= 2 && normalizedQuery.includes(term)) {
+        terms.add(term);
+      }
+    }
+  }
+
+  return Array.from(terms);
+};
+
+export function rankKnowledgeEntriesByKeyword<T extends KeywordSearchEntry>(
+  query: string,
+  entries: T[],
+  limit = 5
+) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return [];
+
+  const terms = getSearchTerms(query, entries);
+
+  return entries
+    .map(entry => {
+      const title = normalizeSearchText(entry.title);
+      const category = normalizeSearchText(entry.category);
+      const keywords = normalizeSearchText(entry.keywords ?? "");
+      const content = normalizeSearchText(entry.content);
+
+      let score = 0;
+      if (title.includes(normalizedQuery)) score += 10;
+      if (keywords.includes(normalizedQuery)) score += 8;
+      if (content.includes(normalizedQuery)) score += 4;
+
+      for (const term of terms) {
+        if (title.includes(term)) score += 6;
+        if (keywords.includes(term)) score += 5;
+        if (category.includes(term)) score += 3;
+        if (content.includes(term)) score += 1;
+      }
+
+      return { entry, score };
+    })
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(item => item.entry);
 }
 
 export async function searchKnowledge(query: string, limit = 5) {
@@ -299,6 +381,13 @@ export async function saveChatMessage(data: {
   role: "user" | "assistant";
   content: string;
   relatedKnowledgeIds?: number[];
+  relatedKnowledgeSnapshot?: Array<{
+    id: number;
+    title: string;
+    category: string;
+  }>;
+  llmProvider?: string;
+  llmModel?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -308,7 +397,10 @@ export async function saveChatMessage(data: {
     userId: data.userId,
     role: data.role,
     content: data.content,
-    relatedKnowledgeIds: data.relatedKnowledgeIds ? JSON.stringify(data.relatedKnowledgeIds) : null,
+    relatedKnowledgeIds: data.relatedKnowledgeIds ?? null,
+    relatedKnowledgeSnapshot: data.relatedKnowledgeSnapshot ?? null,
+    llmProvider: data.llmProvider,
+    llmModel: data.llmModel,
   });
 }
 
@@ -321,10 +413,29 @@ export async function getChatHistory(userId: number, ticketId?: number, limit = 
     conditions.push(eq(chatMessages.ticketId, ticketId));
   }
 
-  return await db.select().from(chatMessages)
+  const rows = await db.select().from(chatMessages)
     .where(and(...conditions))
     .orderBy(desc(chatMessages.createdAt))
     .limit(limit);
+
+  return rows.reverse();
+}
+
+export async function getRecentChatHistory(userId: number, ticketId?: number, limit = 10) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const conditions = [eq(chatMessages.userId, userId)];
+  if (ticketId) {
+    conditions.push(eq(chatMessages.ticketId, ticketId));
+  }
+
+  const rows = await db.select().from(chatMessages)
+    .where(and(...conditions))
+    .orderBy(desc(chatMessages.createdAt))
+    .limit(limit);
+
+  return rows.reverse();
 }
 
 // ============ Ticket Notes ============

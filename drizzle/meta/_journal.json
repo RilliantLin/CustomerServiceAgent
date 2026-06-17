@@ -8,6 +8,13 @@
       "when": 1781405133575,
       "tag": "0001_curved_daredevil",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1781740800000,
+      "tag": "0002_chat_llm_metadata",
+      "breakpoints": true
     }
   ]
 }

@@ -17,7 +17,7 @@
 - [x] 统一 OpenAI 返回结果为当前 `InvokeResult` 结构，减少上层改动
 - [x] 给 LLM 调用增加清晰错误信息：缺少 key、模型错误、限流、网络失败
 - [x] 更新 `.env.example` 或文档，说明本地 OpenAI 配置方式
-- [ ] 验证智能客服在 OpenAI provider 下可正常回复并保存聊天记录
+- [ ] 验证智能客服在 OpenAI provider 下可正常回复并保存聊天记录（需要用户授权后向配置的 OpenAI endpoint 发送本地测试问题）
 
 ## 阶段 2：轻量版 RAG（MySQL JSON 向量 + Node 侧相似度）
 - [x] 增加 OpenAI embedding 环境变量：`OPENAI_EMBEDDING_MODEL`
@@ -35,17 +35,17 @@
   - [x] 返回 topK 条目
 - [x] 保留关键词 LIKE 作为无 embedding 或 OpenAI 不可用时的 fallback
 - [ ] 在公司代理下验证 embedding endpoint 与模型是否可用
-- [ ] 在聊天返回里显示引用知识库条目，便于人工检查答案来源
-- [ ] 增加 RAG 质量测试用例：密码、退货、物流、保修等常见问题
+- [x] 在聊天返回里显示引用知识库条目，便于人工检查答案来源
+- [x] 增加 RAG 质量测试用例：密码、退货、物流、保修等常见问题
 
 ## 阶段 3：提示词与客服回答质量
 - [x] 重写客服 system prompt，要求只基于检索知识回答
 - [x] 当知识库召回置信度低时，引导用户创建工单，而不是编造答案
 - [x] 增加回答格式规范：简洁结论、步骤、必要提醒、引用来源
-- [ ] 增加多轮上下文：读取最近 N 条 `chat_messages` 作为对话历史
-- [ ] 控制上下文长度，避免把过多历史和知识库内容塞进一次请求
-- [ ] 增加 LLM 调用超时与前端失败提示
-- [ ] 记录 LLM provider、model、引用知识库 ID，方便后续排查
+- [x] 增加多轮上下文：读取最近 N 条 `chat_messages` 作为对话历史
+- [x] 控制上下文长度，避免把过多历史和知识库内容塞进一次请求
+- [x] 增加 LLM 调用超时与前端失败提示
+- [x] 记录 LLM provider、model、引用知识库 ID，方便后续排查
 
 ## 阶段 4：Agent SDK 版本（RAG 稳定后再做）
 - [ ] 引入 `@openai/agents`，只在服务端使用
