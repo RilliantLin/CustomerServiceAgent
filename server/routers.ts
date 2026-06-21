@@ -330,6 +330,23 @@ export const appRouter = router({
         return run;
       }),
 
+    summarizeRecentTickets: protectedProcedure
+      .input(z.object({
+        search: z.string().min(1).max(100).optional(),
+        limit: z.number().int().min(1).max(10).default(5),
+      }).optional())
+      .mutation(async ({ input, ctx }) => {
+        const query = input?.search
+          ? `请查询并总结最近与“${input.search}”相关的工单，给出状态、风险等级和建议下一步动作。`
+          : `请查询并总结我最近 ${input?.limit ?? 5} 个工单，给出状态、风险等级和建议下一步动作。`;
+
+        return createAgentChatResponse({
+          userId: ctx.user.id,
+          userRole: ctx.user.role,
+          content: query,
+        });
+      }),
+
     retry: protectedProcedure
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(async ({ input, ctx }) => {
