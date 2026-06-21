@@ -65,9 +65,9 @@
 - [ ] 增加工单查询 Agent 示例任务：根据自然语言查询客户最近工单并生成问题总结
 - [ ] 为需要稳定渲染或落库的 AI 结果定义结构化输出 schema，例如工单分类、风险等级、摘要、建议动作
 - [ ] 结构化输出在后端做校验，校验失败时尝试让模型修复或走人工处理兜底
-- [ ] 定义 Agent Run / Agent Step 数据模型，包含 `queued` / `planning` / `running` / `waiting_approval` / `failed` / `completed` 状态
-- [ ] 持久化 Agent Run 与步骤列表，支持刷新恢复、审计排查和后续失败重试
-- [ ] 提供 Agent Run 查询与重试 API：按 `runId` 获取状态、步骤、最终回答和错误信息
+- [x] 定义 Agent Run / Agent Step 数据模型，包含 `queued` / `planning` / `running` / `waiting_approval` / `failed` / `completed` 状态
+- [x] 持久化 Agent Run 与步骤列表，支持刷新恢复、审计排查和后续失败重试
+- [x] 提供 Agent Run 查询与重试 API：按 `runId` 获取状态、步骤、最终回答和错误信息
 - [ ] 设计客服 Agent 指令：优先回答，必要时创建工单或建议人工处理
 - [ ] 增加 guardrail：敏感信息、超出知识库范围、越权工单访问
 - [ ] 评估 handoff：普通客服、技术支持、售后/退款等多 Agent 分流

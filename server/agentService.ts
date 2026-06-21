@@ -11,24 +11,27 @@ import {
 } from "./chatService";
 
 export type AgentEvent =
-  | { type: "thinking"; message: string }
+  | { type: "thinking"; message: string; runId?: number }
   | {
       type: "tool_call";
       toolName: string;
       argsSummary: string;
+      runId?: number;
     }
   | {
       type: "tool_result";
       toolName: string;
       resultSummary: string;
+      runId?: number;
     }
-  | { type: "final"; content: string };
+  | { type: "final"; content: string; runId?: number };
 
 type AgentContext = {
+  runId?: number;
   userId: number;
   role: "user" | "admin";
   ticketId?: number;
-  emit?: (event: AgentEvent) => void;
+  emit?: (event: AgentEvent) => void | Promise<void>;
 };
 
 type RelatedKnowledgeSnapshot = Array<{
@@ -38,6 +41,7 @@ type RelatedKnowledgeSnapshot = Array<{
 }>;
 
 export type AgentChatResponse = {
+  runId: number;
   userMessage: string;
   assistantMessage: string;
   relatedKnowledge: RelatedKnowledgeSnapshot;
@@ -88,24 +92,74 @@ const ensureTicketAccess = async (context: AgentContext, ticketId: number) => {
   return ticket;
 };
 
-const emitToolCall = (
+const persistAgentEvent = async (runId: number, event: AgentEvent) => {
+  if (event.type === "thinking") {
+    await db.addAgentRunStep({
+      runId,
+      stepType: "thinking",
+      content: event.message,
+    });
+    return;
+  }
+
+  if (event.type === "tool_call") {
+    await db.addAgentRunStep({
+      runId,
+      stepType: "tool_call",
+      toolName: event.toolName,
+      argsSummary: event.argsSummary,
+    });
+    return;
+  }
+
+  if (event.type === "tool_result") {
+    await db.addAgentRunStep({
+      runId,
+      stepType: "tool_result",
+      toolName: event.toolName,
+      resultSummary: event.resultSummary,
+    });
+    return;
+  }
+
+  await db.addAgentRunStep({
+    runId,
+    stepType: "final",
+    content: event.content,
+  });
+};
+
+const emitAgentEvent = async (
+  context: AgentContext | undefined,
+  event: AgentEvent
+) => {
+  const eventWithRun = context?.runId
+    ? { ...event, runId: context.runId }
+    : event;
+  if (context?.runId) {
+    await persistAgentEvent(context.runId, eventWithRun);
+  }
+  await context?.emit?.(eventWithRun);
+};
+
+const emitToolCall = async (
   context: AgentContext | undefined,
   toolName: string,
   args: unknown
 ) => {
-  context?.emit?.({
+  await emitAgentEvent(context, {
     type: "tool_call",
     toolName,
     argsSummary: summarize(args, 300),
   });
 };
 
-const emitToolResult = (
+const emitToolResult = async (
   context: AgentContext | undefined,
   toolName: string,
   result: unknown
 ) => {
-  context?.emit?.({
+  await emitAgentEvent(context, {
     type: "tool_result",
     toolName,
     resultSummary: summarize(result),
@@ -126,7 +180,7 @@ export const agentTools = [
     errorFunction: (_context, error) =>
       `知识库检索失败：${toolError(error)}。请说明无法确认，并建议创建工单。`,
     execute: async (input, runContext) => {
-      emitToolCall(runContext?.context as AgentContext | undefined, "searchKnowledge", input);
+      await emitToolCall(runContext?.context as AgentContext | undefined, "searchKnowledge", input);
       const entries = await db.searchKnowledge(input.query, input.limit);
       const result = entries.map(entry => ({
         id: entry.id,
@@ -134,7 +188,7 @@ export const agentTools = [
         category: entry.category,
         content: entry.content,
       }));
-      emitToolResult(runContext?.context as AgentContext | undefined, "searchKnowledge", {
+      await emitToolResult(runContext?.context as AgentContext | undefined, "searchKnowledge", {
         count: result.length,
         entries: result.map(entry => ({
           id: entry.id,
@@ -158,7 +212,7 @@ export const agentTools = [
     execute: async (input, runContext) => {
       const context = runContext?.context as AgentContext | undefined;
       if (!context) throw new Error("缺少用户上下文");
-      emitToolCall(context, "createTicket", input);
+      await emitToolCall(context, "createTicket", input);
       await db.createTicket({
         userId: context.userId,
         title: input.title,
@@ -166,7 +220,7 @@ export const agentTools = [
         priority: input.priority,
       });
       const summary = { success: true };
-      emitToolResult(context, "createTicket", summary);
+      await emitToolResult(context, "createTicket", summary);
       return {
         success: true,
         message: "工单已创建。请告知用户后续会由人工客服跟进。",
@@ -188,7 +242,7 @@ export const agentTools = [
     execute: async (input, runContext) => {
       const context = runContext?.context as AgentContext | undefined;
       if (!context) throw new Error("缺少用户上下文");
-      emitToolCall(context, "listTickets", input);
+      await emitToolCall(context, "listTickets", input);
       const tickets = await db.listTickets({
         ...input,
         userId: context.role === "admin" ? undefined : context.userId,
@@ -201,7 +255,7 @@ export const agentTools = [
         createdAt: ticket.createdAt,
         updatedAt: ticket.updatedAt,
       }));
-      emitToolResult(context, "listTickets", { count: result.length, tickets: result });
+      await emitToolResult(context, "listTickets", { count: result.length, tickets: result });
       return result;
     },
   }),
@@ -216,7 +270,7 @@ export const agentTools = [
     execute: async (input, runContext) => {
       const context = runContext?.context as AgentContext | undefined;
       if (!context) throw new Error("缺少用户上下文");
-      emitToolCall(context, "getTicketById", input);
+      await emitToolCall(context, "getTicketById", input);
       const ticket = await ensureTicketAccess(context, input.id);
       const notes = await db.getTicketNotes(input.id);
       const result = {
@@ -234,7 +288,7 @@ export const agentTools = [
           createdAt: note.createdAt,
         })),
       };
-      emitToolResult(context, "getTicketById", {
+      await emitToolResult(context, "getTicketById", {
         id: result.id,
         status: result.status,
         priority: result.priority,
@@ -255,7 +309,7 @@ export const agentTools = [
     execute: async (input, runContext) => {
       const context = runContext?.context as AgentContext | undefined;
       if (!context) throw new Error("缺少用户上下文");
-      emitToolCall(context, "addTicketNote", input);
+      await emitToolCall(context, "addTicketNote", input);
       await ensureTicketAccess(context, input.ticketId);
       await db.addTicketNote({
         ticketId: input.ticketId,
@@ -264,7 +318,7 @@ export const agentTools = [
         noteType: "comment",
       });
       const result = { success: true, ticketId: input.ticketId };
-      emitToolResult(context, "addTicketNote", result);
+      await emitToolResult(context, "addTicketNote", result);
       return result;
     },
   }),
@@ -332,14 +386,26 @@ export async function createAgentChatResponse(input: {
   userRole: "user" | "admin";
   ticketId?: number;
   content: string;
+  retryOfRunId?: number;
 }) {
   requireOpenAiAgentConfig();
 
   const events: AgentEvent[] = [];
-  const emit = (event: AgentEvent) => {
+  const emit = async (event: AgentEvent) => {
     events.push(event);
   };
   const agentInput = await buildAgentInput(input);
+  const runRecord = await db.createAgentRun({
+    userId: input.userId,
+    ticketId: input.ticketId,
+    input: input.content,
+    status: "queued",
+    llmProvider: "openai-agents",
+    llmModel: ENV.openAiModel,
+    retryOfRunId: input.retryOfRunId,
+    metadata: { mode: "non_stream" },
+  });
+  const runId = runRecord.id;
 
   await db.saveChatMessage({
     ticketId: input.ticketId,
@@ -348,46 +414,82 @@ export async function createAgentChatResponse(input: {
     content: input.content,
   });
 
-  const result = await withTimeout(
-    createAgentRunner().run(customerServiceAgent, agentInput, {
-      context: {
-        userId: input.userId,
-        role: input.userRole,
-        ticketId: input.ticketId,
-        emit,
-      },
-      maxTurns: 6,
-    }),
-    LLM_TIMEOUT_MS,
-    "Agent call"
-  );
+  try {
+    await db.updateAgentRun(runId, { status: "planning" });
+    const thinkingEvent: AgentEvent = {
+      type: "thinking",
+      message: "Agent 正在分析问题",
+      runId,
+    };
+    events.push(thinkingEvent);
+    await persistAgentEvent(runId, thinkingEvent);
+    await db.updateAgentRun(runId, { status: "running" });
 
-  const assistantContent =
-    typeof result.finalOutput === "string"
-      ? result.finalOutput
-      : "抱歉，我无法处理您的请求。";
-  events.push({ type: "final", content: assistantContent });
+    const result = await withTimeout(
+      createAgentRunner().run(customerServiceAgent, agentInput, {
+        context: {
+          runId,
+          userId: input.userId,
+          role: input.userRole,
+          ticketId: input.ticketId,
+          emit,
+        },
+        maxTurns: 6,
+      }),
+      LLM_TIMEOUT_MS,
+      "Agent call"
+    );
 
-  const relatedKnowledgeSnapshot = extractKnowledgeSnapshotFromEvents(events);
-  await db.saveChatMessage({
-    ticketId: input.ticketId,
-    userId: input.userId,
-    role: "assistant",
-    content: assistantContent,
-    relatedKnowledgeIds: relatedKnowledgeSnapshot.map(kb => kb.id),
-    relatedKnowledgeSnapshot,
-    llmProvider: "openai-agents",
-    llmModel: ENV.openAiModel,
-  });
+    const assistantContent =
+      typeof result.finalOutput === "string"
+        ? result.finalOutput
+        : "抱歉，我无法处理您的请求。";
+    const finalEvent: AgentEvent = { type: "final", content: assistantContent, runId };
+    events.push(finalEvent);
+    await persistAgentEvent(runId, finalEvent);
 
-  return {
-    userMessage: input.content,
-    assistantMessage: assistantContent,
-    relatedKnowledge: relatedKnowledgeSnapshot,
-    llmProvider: "openai-agents",
-    llmModel: ENV.openAiModel,
-    events,
-  };
+    const relatedKnowledgeSnapshot = extractKnowledgeSnapshotFromEvents(events);
+    await db.saveChatMessage({
+      ticketId: input.ticketId,
+      userId: input.userId,
+      role: "assistant",
+      content: assistantContent,
+      relatedKnowledgeIds: relatedKnowledgeSnapshot.map(kb => kb.id),
+      relatedKnowledgeSnapshot,
+      llmProvider: "openai-agents",
+      llmModel: ENV.openAiModel,
+    });
+    await db.updateAgentRun(runId, {
+      status: "completed",
+      finalOutput: assistantContent,
+      llmProvider: "openai-agents",
+      llmModel: ENV.openAiModel,
+      completedAt: new Date(),
+    });
+
+    return {
+      runId,
+      userMessage: input.content,
+      assistantMessage: assistantContent,
+      relatedKnowledge: relatedKnowledgeSnapshot,
+      llmProvider: "openai-agents",
+      llmModel: ENV.openAiModel,
+      events,
+    };
+  } catch (error) {
+    const message = toolError(error);
+    await db.addAgentRunStep({
+      runId,
+      stepType: "error",
+      error: message,
+    });
+    await db.updateAgentRun(runId, {
+      status: "failed",
+      error: message,
+      completedAt: new Date(),
+    });
+    throw error;
+  }
 }
 
 export async function streamAgentChatResponse(
@@ -396,19 +498,31 @@ export async function streamAgentChatResponse(
     userRole: "user" | "admin";
     ticketId?: number;
     content: string;
+    retryOfRunId?: number;
   },
   signal: AbortSignal,
-  emit: (event: AgentEvent) => void
+  emit: (event: AgentEvent) => void | Promise<void>,
+  emitDelta?: (content: string) => void | Promise<void>
 ) {
   requireOpenAiAgentConfig();
 
   const events: AgentEvent[] = [];
-  const capture = (event: AgentEvent) => {
+  const capture = async (event: AgentEvent) => {
     events.push(event);
-    emit(event);
+    await emit(event);
   };
   const agentInput = await buildAgentInput(input);
-  capture({ type: "thinking", message: "Agent 正在分析问题" });
+  const runRecord = await db.createAgentRun({
+    userId: input.userId,
+    ticketId: input.ticketId,
+    input: input.content,
+    status: "queued",
+    llmProvider: "openai-agents",
+    llmModel: ENV.openAiModel,
+    retryOfRunId: input.retryOfRunId,
+    metadata: { mode: "stream" },
+  });
+  const runId = runRecord.id;
 
   await db.saveChatMessage({
     ticketId: input.ticketId,
@@ -417,49 +531,89 @@ export async function streamAgentChatResponse(
     content: input.content,
   });
 
-  const result = await createAgentRunner().run(customerServiceAgent, agentInput, {
-    context: {
-      userId: input.userId,
-      role: input.userRole,
+  try {
+    await db.updateAgentRun(runId, { status: "planning" });
+    const thinkingEvent: AgentEvent = {
+      type: "thinking",
+      message: "Agent 正在分析问题",
+      runId,
+    };
+    events.push(thinkingEvent);
+    await persistAgentEvent(runId, thinkingEvent);
+    await emit(thinkingEvent);
+    await db.updateAgentRun(runId, { status: "running" });
+
+    const result = await createAgentRunner().run(customerServiceAgent, agentInput, {
+      context: {
+        runId,
+        userId: input.userId,
+        role: input.userRole,
+        ticketId: input.ticketId,
+        emit: capture,
+      },
+      maxTurns: 6,
+      signal,
+      stream: true as const,
+    });
+
+    let assistantContent = "";
+    const textStream = result.toTextStream({ compatibleWithNodeStreams: true });
+
+    for await (const value of textStream) {
+      const chunk = Buffer.isBuffer(value) ? value.toString("utf8") : String(value);
+      if (!chunk) continue;
+      assistantContent += chunk;
+      await emitDelta?.(chunk);
+    }
+
+    await result.completed;
+
+    if (!assistantContent) {
+      assistantContent = "抱歉，我无法处理您的请求。";
+      await emitDelta?.(assistantContent);
+    }
+
+    const finalEvent: AgentEvent = { type: "final", content: assistantContent, runId };
+    events.push(finalEvent);
+    await persistAgentEvent(runId, finalEvent);
+    await emit(finalEvent);
+
+    const relatedKnowledgeSnapshot = extractKnowledgeSnapshotFromEvents(events);
+    await db.saveChatMessage({
       ticketId: input.ticketId,
-      emit: capture,
-    },
-    maxTurns: 6,
-    signal,
-    stream: true as const,
-  });
+      userId: input.userId,
+      role: "assistant",
+      content: assistantContent,
+      relatedKnowledgeIds: relatedKnowledgeSnapshot.map(kb => kb.id),
+      relatedKnowledgeSnapshot,
+      llmProvider: "openai-agents",
+      llmModel: ENV.openAiModel,
+    });
+    await db.updateAgentRun(runId, {
+      status: "completed",
+      finalOutput: assistantContent,
+      llmProvider: "openai-agents",
+      llmModel: ENV.openAiModel,
+      completedAt: new Date(),
+    });
 
-  let assistantContent = "";
-  const textStream = result.toTextStream({ compatibleWithNodeStreams: true });
-
-  for await (const value of textStream) {
-    const chunk = Buffer.isBuffer(value) ? value.toString("utf8") : String(value);
-    if (!chunk) continue;
-    assistantContent += chunk;
-    emit({ type: "final", content: chunk });
+    return {
+      runId,
+      assistantContent,
+      relatedKnowledgeSnapshot,
+    };
+  } catch (error) {
+    const message = toolError(error);
+    await db.addAgentRunStep({
+      runId,
+      stepType: "error",
+      error: message,
+    });
+    await db.updateAgentRun(runId, {
+      status: "failed",
+      error: message,
+      completedAt: new Date(),
+    });
+    throw error;
   }
-
-  await result.completed;
-
-  if (!assistantContent) {
-    assistantContent = "抱歉，我无法处理您的请求。";
-    emit({ type: "final", content: assistantContent });
-  }
-
-  const relatedKnowledgeSnapshot = extractKnowledgeSnapshotFromEvents(events);
-  await db.saveChatMessage({
-    ticketId: input.ticketId,
-    userId: input.userId,
-    role: "assistant",
-    content: assistantContent,
-    relatedKnowledgeIds: relatedKnowledgeSnapshot.map(kb => kb.id),
-    relatedKnowledgeSnapshot,
-    llmProvider: "openai-agents",
-    llmModel: ENV.openAiModel,
-  });
-
-  return {
-    assistantContent,
-    relatedKnowledgeSnapshot,
-  };
 }

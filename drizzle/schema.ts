@@ -40,6 +40,21 @@ export const chatMessageRoleEnum = pgEnum("chat_message_role", [
 export const knowledgeDocumentStatusEnum = pgEnum("knowledge_document_status", [
   ...KNOWLEDGE_DOCUMENT_STATUSES,
 ]);
+export const agentRunStatusEnum = pgEnum("agent_run_status", [
+  "queued",
+  "planning",
+  "running",
+  "waiting_approval",
+  "failed",
+  "completed",
+]);
+export const agentRunStepTypeEnum = pgEnum("agent_run_step_type", [
+  "thinking",
+  "tool_call",
+  "tool_result",
+  "final",
+  "error",
+]);
 
 /**
  * Core user table backing auth flow.
@@ -183,3 +198,55 @@ export const chatMessages = pgTable("chat_messages", {
 
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertChatMessage = typeof chatMessages.$inferInsert;
+
+/**
+ * Agent runs table - Agent 执行记录
+ * 保存一次 Agent 对话运行的状态、输入、最终输出和错误信息，用于刷新恢复和审计排查
+ */
+export const agentRuns = pgTable("agent_runs", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull(),
+  ticketId: integer("ticketId"),
+  status: agentRunStatusEnum("status").default("queued").notNull(),
+  input: text("input").notNull(),
+  finalOutput: text("finalOutput"),
+  error: text("error"),
+  llmProvider: varchar("llmProvider", { length: 32 }),
+  llmModel: varchar("llmModel", { length: 128 }),
+  retryOfRunId: integer("retryOfRunId"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp("completedAt", { withTimezone: true }),
+}, (table) => ({
+  userIdIdx: index("idx_agent_runs_userId").on(table.userId),
+  ticketIdIdx: index("idx_agent_runs_ticketId").on(table.ticketId),
+  statusIdx: index("idx_agent_runs_status").on(table.status),
+  retryOfRunIdIdx: index("idx_agent_runs_retryOfRunId").on(table.retryOfRunId),
+}));
+
+export type AgentRun = typeof agentRuns.$inferSelect;
+export type InsertAgentRun = typeof agentRuns.$inferInsert;
+
+/**
+ * Agent run steps table - Agent 执行步骤
+ * 保存工具调用、工具结果、思考状态、最终回答和错误摘要
+ */
+export const agentRunSteps = pgTable("agent_run_steps", {
+  id: serial("id").primaryKey(),
+  runId: integer("runId").notNull(),
+  stepType: agentRunStepTypeEnum("stepType").notNull(),
+  toolName: varchar("toolName", { length: 128 }),
+  argsSummary: text("argsSummary"),
+  resultSummary: text("resultSummary"),
+  content: text("content"),
+  error: text("error"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  runIdIdx: index("idx_agent_run_steps_runId").on(table.runId),
+  stepTypeIdx: index("idx_agent_run_steps_stepType").on(table.stepType),
+}));
+
+export type AgentRunStep = typeof agentRunSteps.$inferSelect;
+export type InsertAgentRunStep = typeof agentRunSteps.$inferInsert;

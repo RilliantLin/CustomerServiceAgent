@@ -2,7 +2,7 @@ import { eq, and, desc, like, inArray, isNotNull, sql } from "drizzle-orm";
 import { cosineDistance } from "drizzle-orm/sql/functions/vector";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { InsertUser, users, tickets, knowledgeBase, knowledgeDocuments, chatMessages, ticketNotes } from "../drizzle/schema";
+import { InsertUser, users, tickets, knowledgeBase, knowledgeDocuments, chatMessages, ticketNotes, agentRuns, agentRunSteps } from "../drizzle/schema";
 import type { KnowledgeDocumentStatus } from "../shared/knowledge";
 import { ENV } from './_core/env';
 import {
@@ -687,6 +687,132 @@ export async function getRecentChatHistory(userId: number, ticketId?: number, li
     .limit(limit);
 
   return rows.reverse();
+}
+
+// ============ Agent Runs ============
+
+export type AgentRunStatus =
+  | "queued"
+  | "planning"
+  | "running"
+  | "waiting_approval"
+  | "failed"
+  | "completed";
+
+export type AgentRunStepType =
+  | "thinking"
+  | "tool_call"
+  | "tool_result"
+  | "final"
+  | "error";
+
+export async function createAgentRun(data: {
+  userId: number;
+  ticketId?: number;
+  input: string;
+  status?: AgentRunStatus;
+  llmProvider?: string;
+  llmModel?: string;
+  retryOfRunId?: number;
+  metadata?: Record<string, unknown>;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .insert(agentRuns)
+    .values({
+      userId: data.userId,
+      ticketId: data.ticketId,
+      input: data.input,
+      status: data.status ?? "queued",
+      llmProvider: data.llmProvider,
+      llmModel: data.llmModel,
+      retryOfRunId: data.retryOfRunId,
+      metadata: data.metadata,
+    })
+    .returning({ id: agentRuns.id });
+
+  return result[0];
+}
+
+export async function updateAgentRun(
+  id: number,
+  data: Partial<{
+    status: AgentRunStatus;
+    finalOutput: string | null;
+    error: string | null;
+    llmProvider: string | null;
+    llmModel: string | null;
+    completedAt: Date | null;
+    metadata: Record<string, unknown> | null;
+  }>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db
+    .update(agentRuns)
+    .set({
+      ...data,
+      updatedAt: new Date(),
+    })
+    .where(eq(agentRuns.id, id));
+}
+
+export async function addAgentRunStep(data: {
+  runId: number;
+  stepType: AgentRunStepType;
+  toolName?: string;
+  argsSummary?: string;
+  resultSummary?: string;
+  content?: string;
+  error?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .insert(agentRunSteps)
+    .values(data)
+    .returning({ id: agentRunSteps.id });
+
+  return result[0];
+}
+
+export async function getAgentRunById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .select()
+    .from(agentRuns)
+    .where(eq(agentRuns.id, id))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function getAgentRunSteps(runId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db
+    .select()
+    .from(agentRunSteps)
+    .where(eq(agentRunSteps.runId, runId))
+    .orderBy(agentRunSteps.createdAt, agentRunSteps.id);
+}
+
+export async function getAgentRunWithSteps(id: number) {
+  const run = await getAgentRunById(id);
+  if (!run) return null;
+
+  return {
+    ...run,
+    steps: await getAgentRunSteps(id),
+  };
 }
 
 // ============ Ticket Notes ============

@@ -14,6 +14,7 @@ type SsePayload =
       type: "meta";
       relatedKnowledge: Array<{ id: number; title: string; category: string }>;
       llmProvider: string;
+      runId?: number;
     }
   | { type: "delta"; content: string }
   | {
@@ -80,9 +81,9 @@ export function registerChatStreamRoutes(app: Express) {
           abortController.signal,
           event => {
             writeSse(res, { type: "agent_event", event });
-            if (event.type === "final") {
-              writeSse(res, { type: "delta", content: event.content });
-            }
+          },
+          content => {
+            writeSse(res, { type: "delta", content });
           }
         );
 
@@ -90,6 +91,7 @@ export function registerChatStreamRoutes(app: Express) {
           type: "meta",
           relatedKnowledge: result.relatedKnowledgeSnapshot,
           llmProvider: "openai-agents",
+          runId: result.runId,
         });
         writeSse(res, {
           type: "done",

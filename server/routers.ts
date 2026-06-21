@@ -314,6 +314,42 @@ export const appRouter = router({
         });
       }),
   }),
+
+  // ============ Agent Runs Router ============
+  agentRuns: router({
+    getById: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .query(async ({ input, ctx }) => {
+        const run = await db.getAgentRunWithSteps(input.id);
+        if (!run) {
+          throw new Error("Agent run not found");
+        }
+        if (ctx.user.role !== "admin" && run.userId !== ctx.user.id) {
+          throw new Error("Unauthorized");
+        }
+        return run;
+      }),
+
+    retry: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input, ctx }) => {
+        const existingRun = await db.getAgentRunById(input.id);
+        if (!existingRun) {
+          throw new Error("Agent run not found");
+        }
+        if (ctx.user.role !== "admin" && existingRun.userId !== ctx.user.id) {
+          throw new Error("Unauthorized");
+        }
+
+        return createAgentChatResponse({
+          userId: existingRun.userId,
+          userRole: existingRun.userId === ctx.user.id ? ctx.user.role : "user",
+          ticketId: existingRun.ticketId ?? undefined,
+          content: existingRun.input,
+          retryOfRunId: existingRun.id,
+        });
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
