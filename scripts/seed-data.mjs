@@ -1,4 +1,4 @@
-import mysql from "mysql2/promise";
+import postgres from "postgres";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -11,27 +11,24 @@ async function seedData() {
     process.exit(1);
   }
 
-  const connection = await mysql.createConnection(DATABASE_URL);
+  const sql = postgres(DATABASE_URL, { max: 1 });
 
   try {
     console.log("开始插入模拟数据...");
 
-    // 1. 插入示例用户数据
-    await connection.execute(
-      `INSERT INTO users (openId, name, email, loginMethod, role)
-       VALUES (?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         name = VALUES(name),
-         email = VALUES(email),
-         loginMethod = VALUES(loginMethod),
-         role = VALUES(role)`,
-      ["seed-user", "示例用户", "demo@example.com", "seed", "user"]
-    );
-    const [users] = await connection.execute("SELECT id FROM users WHERE openId = ?", ["seed-user"]);
-    const seedUserId = users[0].id;
+    const [seedUser] = await sql`
+      INSERT INTO users ("openId", name, email, "loginMethod", role)
+      VALUES (${ "seed-user" }, ${ "示例用户" }, ${ "demo@example.com" }, ${ "seed" }, ${ "user" })
+      ON CONFLICT ("openId") DO UPDATE SET
+        name = EXCLUDED.name,
+        email = EXCLUDED.email,
+        "loginMethod" = EXCLUDED."loginMethod",
+        role = EXCLUDED.role
+      RETURNING id
+    `;
+    const seedUserId = seedUser.id;
     console.log(`已准备示例用户，ID: ${seedUserId}`);
 
-    // 2. 插入知识库数据
     const knowledgeData = [
       {
         title: "如何重置密码？",
@@ -84,26 +81,19 @@ async function seedData() {
     ];
 
     for (const kb of knowledgeData) {
-      const [existingKnowledge] = await connection.execute(
-        "SELECT id FROM knowledge_base WHERE title = ? LIMIT 1",
-        [kb.title]
-      );
-
-      if (existingKnowledge.length > 0) {
-        await connection.execute(
-          "UPDATE knowledge_base SET content = ?, category = ?, keywords = ? WHERE id = ?",
-          [kb.content, kb.category, kb.keywords, existingKnowledge[0].id]
-        );
-      } else {
-        await connection.execute(
-          "INSERT INTO knowledge_base (title, content, category, keywords) VALUES (?, ?, ?, ?)",
-          [kb.title, kb.content, kb.category, kb.keywords]
-        );
-      }
+      await sql`
+        INSERT INTO knowledge_base (title, content, category, keywords)
+        VALUES (${kb.title}, ${kb.content}, ${kb.category}, ${kb.keywords})
+        ON CONFLICT (title) DO UPDATE SET
+          content = EXCLUDED.content,
+          category = EXCLUDED.category,
+          keywords = EXCLUDED.keywords,
+          embedding = NULL,
+          "updatedAt" = now()
+      `;
     }
     console.log(`已准备 ${knowledgeData.length} 条知识库数据`);
 
-    // 3. 插入示例工单数据
     const ticketData = [
       {
         userId: seedUserId,
@@ -142,23 +132,21 @@ async function seedData() {
       },
     ];
 
-    const [existingTickets] = await connection.execute(
-      "SELECT COUNT(*) AS count FROM tickets WHERE userId = ?",
-      [seedUserId]
-    );
-    if (existingTickets[0].count === 0) {
+    const [{ count: existingTicketCount }] = await sql`
+      SELECT COUNT(*)::int AS count FROM tickets WHERE "userId" = ${seedUserId}
+    `;
+    if (existingTicketCount === 0) {
       for (const ticket of ticketData) {
-        await connection.execute(
-          "INSERT INTO tickets (userId, title, description, status, priority) VALUES (?, ?, ?, ?, ?)",
-          [ticket.userId, ticket.title, ticket.description, ticket.status, ticket.priority]
-        );
+        await sql`
+          INSERT INTO tickets ("userId", title, description, status, priority)
+          VALUES (${ticket.userId}, ${ticket.title}, ${ticket.description}, ${ticket.status}, ${ticket.priority})
+        `;
       }
       console.log(`已插入 ${ticketData.length} 条工单数据`);
     } else {
       console.log("已存在示例工单，跳过工单插入");
     }
 
-    // 4. 插入示例工单备注
     const noteData = [
       {
         ticketId: 1,
@@ -186,16 +174,15 @@ async function seedData() {
       },
     ];
 
-    const [existingNotes] = await connection.execute(
-      "SELECT COUNT(*) AS count FROM ticket_notes WHERE userId = ?",
-      [seedUserId]
-    );
-    if (existingNotes[0].count === 0) {
+    const [{ count: existingNoteCount }] = await sql`
+      SELECT COUNT(*)::int AS count FROM ticket_notes WHERE "userId" = ${seedUserId}
+    `;
+    if (existingNoteCount === 0) {
       for (const note of noteData) {
-        await connection.execute(
-          "INSERT INTO ticket_notes (ticketId, userId, content, noteType) VALUES (?, ?, ?, ?)",
-          [note.ticketId, note.userId, note.content, note.noteType]
-        );
+        await sql`
+          INSERT INTO ticket_notes ("ticketId", "userId", content, "noteType")
+          VALUES (${note.ticketId}, ${note.userId}, ${note.content}, ${note.noteType})
+        `;
       }
       console.log(`已插入 ${noteData.length} 条工单备注数据`);
     } else {
@@ -207,7 +194,7 @@ async function seedData() {
     console.error("数据初始化失败:", error);
     process.exit(1);
   } finally {
-    await connection.end();
+    await sql.end();
   }
 }
 

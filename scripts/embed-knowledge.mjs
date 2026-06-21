@@ -3,7 +3,6 @@ import {
   buildKnowledgeEmbeddingInput,
   createEmbedding,
   getEmbeddingProviderConfig,
-  parseEmbedding,
 } from "../server/_core/embeddings.ts";
 import {
   listKnowledgeEntries,
@@ -28,7 +27,7 @@ async function main() {
   let skipped = 0;
 
   for (const entry of entries) {
-    if (parseEmbedding(entry.embedding)) {
+    if (Array.isArray(entry.embedding) && entry.embedding.length > 0) {
       skipped += 1;
       continue;
     }

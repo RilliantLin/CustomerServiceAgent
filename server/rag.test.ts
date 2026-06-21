@@ -3,7 +3,7 @@ import {
   buildChatHistoryMessages,
   buildCustomerServiceSystemPrompt,
   buildKnowledgeContext,
-} from "./routers";
+} from "./chatService";
 import { rankKnowledgeEntriesByKeyword } from "./db";
 
 const entries = [

@@ -1,7 +1,7 @@
 # 客服工单 Agent 系统 - 阶段计划
 
 ## 阶段 0：本地开发与基础能力
-- [x] 使用 Docker 启动本地 MySQL 服务
+- [x] 使用 Docker 启动本地 PostgreSQL + pgvector 服务
 - [x] 修复数据库迁移，确保 `users` 与业务表可完整创建
 - [x] 初始化知识库、示例用户、示例工单和备注数据
 - [x] 增加本地开发登录入口（普通用户 / 管理员）
@@ -19,10 +19,10 @@
 - [x] 更新 `.env.example` 或文档，说明本地 OpenAI 配置方式
 - [ ] 验证智能客服在 OpenAI provider 下可正常回复并保存聊天记录（需要用户授权后向配置的 OpenAI endpoint 发送本地测试问题）
 
-## 阶段 2：轻量版 RAG（MySQL JSON 向量 + Node 侧相似度）
+## 阶段 2：pgvector RAG（PostgreSQL 向量检索 + 关键词兜底）
 - [x] 增加 OpenAI embedding 环境变量：`OPENAI_EMBEDDING_MODEL`
 - [x] 增加代理兼容配置：`OPENAI_EMBEDDING_BASE_URL`、`OPENAI_EMBEDDING_PATH`
-- [x] 确认 `knowledge_base.embedding` JSON 字段可用于存储向量
+- [x] 确认 `knowledge_base.embedding` pgvector 字段可用于存储向量
 - [x] 实现 embedding 生成函数，输入知识库标题、内容、分类、关键词
 - [x] 增加知识库 embedding 回填脚本，例如 `pnpm run kb:embed`
 - [x] 增加 embedding 连通性诊断命令：`npm run kb:embed:check`
@@ -30,8 +30,7 @@
 - [x] 优化 seed 脚本，避免重复插入知识库导致重复 embedding
 - [x] 将 `searchKnowledge` 从标题 LIKE 升级为：
   - [x] query embedding
-  - [x] 拉取已有知识库向量
-  - [x] cosine similarity 排序
+  - [x] 使用 pgvector cosine distance 排序
   - [x] 返回 topK 条目
 - [x] 保留关键词 LIKE 作为无 embedding 或 OpenAI 不可用时的 fallback
 - [ ] 在公司代理下验证 embedding endpoint 与模型是否可用

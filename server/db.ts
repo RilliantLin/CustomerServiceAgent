@@ -1,24 +1,27 @@
-import { eq, and, desc, like, inArray } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { eq, and, desc, like, inArray, isNotNull } from "drizzle-orm";
+import { cosineDistance } from "drizzle-orm/sql/functions/vector";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import { InsertUser, users, tickets, knowledgeBase, chatMessages, ticketNotes } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import {
-  cosineSimilarity,
   createEmbedding,
   isEmbeddingEnabled,
-  parseEmbedding,
 } from "./_core/embeddings";
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _client: ReturnType<typeof postgres> | null = null;
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _client = postgres(process.env.DATABASE_URL, { max: 10 });
+      _db = drizzle(_client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
+      _client = null;
     }
   }
   return _db;
@@ -73,8 +76,10 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     if (Object.keys(updateSet).length === 0) {
       updateSet.lastSignedIn = new Date();
     }
+    updateSet.updatedAt = new Date();
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
+    await db.insert(users).values(values).onConflictDoUpdate({
+      target: users.openId,
       set: updateSet,
     });
   } catch (error) {
@@ -186,6 +191,7 @@ export async function updateTicket(ticketId: number, data: Partial<{
   if (data.priority !== undefined) updateData.priority = data.priority;
   if (data.assignedTo !== undefined) updateData.assignedTo = data.assignedTo;
   if (data.resolvedAt !== undefined) updateData.resolvedAt = data.resolvedAt;
+  updateData.updatedAt = new Date();
 
   return db.update(tickets).set(updateData).where(eq(tickets.id, ticketId));
 }
@@ -238,7 +244,7 @@ export async function updateKnowledgeEmbedding(id: number, embedding: number[]) 
   if (!db) throw new Error("Database not available");
 
   return db.update(knowledgeBase)
-    .set({ embedding })
+    .set({ embedding, updatedAt: new Date() })
     .where(eq(knowledgeBase.id, id));
 }
 
@@ -342,33 +348,14 @@ export async function searchKnowledge(query: string, limit = 5) {
   }
 
   try {
-    const entries = await db.select().from(knowledgeBase);
-    const entriesWithEmbeddings = entries
-      .map(entry => ({
-        entry,
-        embedding: parseEmbedding(entry.embedding),
-      }))
-      .filter((item): item is { entry: typeof entries[number]; embedding: number[] } =>
-        Boolean(item.embedding)
-      );
-
-    if (entriesWithEmbeddings.length === 0) {
-      return fallbackSearchKnowledge(query, limit);
-    }
-
     const queryEmbedding = await createEmbedding(query, "query");
-    const scored = entries
-      .map(entry => {
-        const embedding = parseEmbedding(entry.embedding);
-        return {
-          entry,
-          score: embedding ? cosineSimilarity(queryEmbedding, embedding) : 0,
-        };
-      })
-      .filter(item => item.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit)
-      .map(item => item.entry);
+    const distance = cosineDistance(knowledgeBase.embedding, queryEmbedding);
+    const scored = await db
+      .select()
+      .from(knowledgeBase)
+      .where(isNotNull(knowledgeBase.embedding))
+      .orderBy(distance, desc(knowledgeBase.updatedAt))
+      .limit(limit);
 
     return scored.length > 0 ? scored : fallbackSearchKnowledge(query, limit);
   } catch (error) {

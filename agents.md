@@ -36,7 +36,7 @@
                 ▼            ▼            ▼
         ┌─────────────┐ ┌─────────────┐ ┌──────────────┐
         │   数据库    │ │  LLM API    │ │ 向量检索引擎 │
-        │  (MySQL)    │ │  (Manus)    │ │ (简单文本搜索)│
+        │  (PostgreSQL + pgvector)    │ │  (Manus)    │ │ (简单文本搜索)│
         └─────────────┘ └─────────────┘ └──────────────┘
 ```
 
@@ -251,8 +251,8 @@
 - **实现方式**：
   - 使用本地 `BAAI/bge-m3` embedding 模型生成查询和知识库向量
   - 通过 Docker Compose 启动 `text-embeddings-inference` 服务
-  - 将知识库向量存储在 MySQL `knowledge_base.embedding` JSON 字段
-  - 在 Node 侧计算余弦相似度并返回相关条目
+  - 将知识库向量存储在 PostgreSQL `knowledge_base.embedding` pgvector 字段
+  - 使用 pgvector cosine distance 和 HNSW 索引在数据库侧排序并返回相关条目
   - 当本地 embedding 服务不可用或条目未回填向量时，自动回退到关键词 LIKE 搜索
 
 ### Agent 的限制与注意事项
@@ -406,8 +406,8 @@ customer_service_agent/
 **示例**：添加"常见问题分类"表
 
 ```typescript
-export const faqCategories = mysqlTable("faq_categories", {
-  id: int("id").autoincrement().primaryKey(),
+export const faqCategories = pgTable("faq_categories", {
+  id: serial("id").primaryKey(),
   name: varchar("name", { length: 100 }).notNull(),
   description: text("description"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -458,23 +458,19 @@ faqCategories: router({
 
 #### 本地向量检索（RAG）
 
-**当前实现**：本地 `BAAI/bge-m3` 向量检索 + MySQL JSON 向量存储
+**当前实现**：本地 `BAAI/bge-m3` 向量检索 + PostgreSQL pgvector 向量存储
 
 ```typescript
 // 1. 查询时生成 query embedding
 const queryEmbedding = await createEmbedding(query, "query");
 
-// 2. 从 MySQL 读取知识库条目的 embedding
-const entries = await db.select().from(knowledgeBase);
-
-// 3. 在 Node 侧计算余弦相似度
-const results = entries
-  .map(entry => ({
-    entry,
-    score: cosineSimilarity(queryEmbedding, parseEmbedding(entry.embedding)),
-  }))
-  .sort((a, b) => b.score - a.score)
-  .slice(0, 3);
+// 2. 使用 pgvector 按 cosine distance 检索知识库条目
+const results = await db
+  .select()
+  .from(knowledgeBase)
+  .where(isNotNull(knowledgeBase.embedding))
+  .orderBy(cosineDistance(knowledgeBase.embedding, queryEmbedding))
+  .limit(3);
 ```
 
 **知识库向量回填**：
@@ -605,8 +601,8 @@ describe("TicketList", () => {
 # 安装依赖
 pnpm install
 
-# 启动 MySQL 和本地 embedding 服务
-docker compose up -d mysql embeddings
+# 启动 PostgreSQL + pgvector 和本地 embedding 服务
+docker compose up -d postgres embeddings
 
 # 初始化知识库数据
 npm run db:seed
@@ -641,7 +637,7 @@ pnpm build
 #### 必需环境变量
 
 ```
-DATABASE_URL=mysql://user:password@host:port/database
+DATABASE_URL=postgres://user:password@host:port/database
 JWT_SECRET=your-secret-key
 VITE_APP_ID=manus-oauth-app-id
 OAUTH_SERVER_URL=https://api.manus.im
@@ -742,10 +738,10 @@ npm run kb:embed:check
 
 ```bash
 # 导出数据库
-mysqldump -u user -p database > backup.sql
+pg_dump "$DATABASE_URL" > backup.sql
 
 # 导入数据库
-mysql -u user -p database < backup.sql
+psql "$DATABASE_URL" < backup.sql
 ```
 
 #### 定期维护
@@ -792,7 +788,7 @@ mysql -u user -p database < backup.sql
 | 后端框架   | Express         | 4     |
 | 后端 RPC   | tRPC            | 11    |
 | 数据库 ORM | Drizzle ORM     | 0.44+ |
-| 数据库     | MySQL           | 8+    |
+| 数据库     | PostgreSQL + pgvector | 16+ |
 | 认证       | Manus OAuth     | -     |
 | LLM        | Manus Forge API | -     |
 

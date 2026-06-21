@@ -1,18 +1,19 @@
 services:
-  mysql:
-    image: mysql:8.4
-    container_name: customer_service_agent_mysql
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: customer_service_agent_postgres
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: password
-      MYSQL_DATABASE: customer_service_agent
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: customer_service_agent
       TZ: Asia/Shanghai
     ports:
-      - "3306:3306"
+      - "5432:5432"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -39,5 +40,5 @@ services:
       - tei_data:/data
 
 volumes:
-  mysql_data:
+  postgres_data:
   tei_data:
