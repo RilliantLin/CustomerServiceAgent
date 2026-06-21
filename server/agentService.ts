@@ -52,6 +52,7 @@ export type AgentChatResponse = {
 };
 
 const MAX_SUMMARY_LENGTH = 600;
+const AGENT_TRACE_GROUP_ID = "customer-service-agent";
 
 export const StructuredAgentOutputSchema = z.object({
   category: z.enum([
@@ -72,6 +73,20 @@ export const StructuredAgentOutputSchema = z.object({
 });
 
 export type StructuredAgentOutput = z.infer<typeof StructuredAgentOutputSchema>;
+
+export const AgentHandoffEvaluationSchema = z.object({
+  enabled: z.boolean(),
+  recommendedAgent: z.enum([
+    "general_support",
+    "technical_support",
+    "after_sales_refund",
+    "human_support",
+  ]),
+  reason: z.string().min(1).max(500),
+  shouldHandoff: z.boolean(),
+});
+
+export type AgentHandoffEvaluation = z.infer<typeof AgentHandoffEvaluationSchema>;
 
 type InputGuardrailResult =
   | { allowed: true }
@@ -237,6 +252,27 @@ const requireOpenAiAgentConfig = () => {
   }
 };
 
+export const getAgentTraceId = (runId: number) =>
+  `trace_${runId.toString(16).padStart(32, "0").slice(-32)}`;
+
+const getAgentRunMetadata = (
+  runId: number,
+  mode: "stream" | "non_stream",
+  extra?: Record<string, unknown>
+) => ({
+  mode,
+  tracing: {
+    enabled: ENV.agentTracingEnabled,
+    traceId: getAgentTraceId(runId),
+    groupId: AGENT_TRACE_GROUP_ID,
+    includeSensitiveData: false,
+  },
+  handoffs: {
+    enabled: ENV.agentHandoffsEnabled,
+  },
+  ...extra,
+});
+
 const agentModelProvider = () =>
   new OpenAIProvider({
     apiKey: ENV.openAiApiKey,
@@ -244,12 +280,29 @@ const agentModelProvider = () =>
     useResponses: true,
   });
 
-const createAgentRunner = () =>
+const createAgentRunner = (
+  runId?: number,
+  mode?: "stream" | "non_stream",
+  input?: {
+    userId: number;
+    ticketId?: number;
+  }
+) =>
   new Runner({
     modelProvider: agentModelProvider(),
-    tracingDisabled: true,
+    tracingDisabled: !ENV.agentTracingEnabled,
     traceIncludeSensitiveData: false,
     workflowName: "Customer Service Agent",
+    traceId: runId ? getAgentTraceId(runId) : undefined,
+    groupId: AGENT_TRACE_GROUP_ID,
+    traceMetadata: runId
+      ? {
+          runId: String(runId),
+          userId: input ? String(input.userId) : "",
+          ticketId: input?.ticketId ? String(input.ticketId) : "",
+          mode: mode ?? "",
+        }
+      : undefined,
     toolNotFoundBehavior: "return_error_to_model",
   });
 
@@ -334,6 +387,44 @@ const createBlockedGuardrailRun = async (input: {
   return runRecord.id;
 };
 
+export const evaluateAgentHandoff = (
+  structuredOutput: StructuredAgentOutput
+): AgentHandoffEvaluation => {
+  if (structuredOutput.riskLevel === "urgent") {
+    return {
+      enabled: ENV.agentHandoffsEnabled,
+      recommendedAgent: "human_support",
+      reason: "问题风险等级为 urgent，应优先交由人工客服确认和跟进。",
+      shouldHandoff: true,
+    };
+  }
+
+  if (structuredOutput.category === "technical") {
+    return {
+      enabled: ENV.agentHandoffsEnabled,
+      recommendedAgent: "technical_support",
+      reason: "问题属于技术故障或产品使用异常，适合转技术支持 Agent。",
+      shouldHandoff: ENV.agentHandoffsEnabled,
+    };
+  }
+
+  if (structuredOutput.category === "refund" || structuredOutput.category === "warranty") {
+    return {
+      enabled: ENV.agentHandoffsEnabled,
+      recommendedAgent: "after_sales_refund",
+      reason: "问题涉及退款、退货或保修售后，适合转售后/退款 Agent。",
+      shouldHandoff: ENV.agentHandoffsEnabled,
+    };
+  }
+
+  return {
+    enabled: ENV.agentHandoffsEnabled,
+    recommendedAgent: "general_support",
+    reason: "当前问题可由普通客服 Agent 继续处理。",
+    shouldHandoff: false,
+  };
+};
+
 const emitAgentEvent = async (
   context: AgentContext | undefined,
   event: AgentEvent
@@ -373,6 +464,40 @@ const emitToolResult = async (
 
 const toolError = (error: unknown) =>
   error instanceof Error ? error.message : "工具执行失败";
+
+const getRunMetrics = (startedAt: number, events: AgentEvent[]) => ({
+  latencyMs: Date.now() - startedAt,
+  toolCallCount: events.filter(event => event.type === "tool_call").length,
+  toolResultCount: events.filter(event => event.type === "tool_result").length,
+});
+
+export const getAgentRagComparison = (metrics: {
+  latencyMs: number;
+  toolCallCount: number;
+  toolResultCount: number;
+}) => ({
+  simpleRag: {
+    strengths: [
+      "固定一次检索加一次模型调用，路径短，延迟和成本更稳定",
+      "实现简单，适合常见 FAQ 和知识库问答",
+    ],
+    limitations: [
+      "不能自然调用创建工单、查询工单、添加备注等动作",
+      "缺少可恢复的执行步骤和工具审计",
+    ],
+  },
+  agentSdk: {
+    strengths: [
+      "可按需调用知识库和工单工具，能完成查询、总结、创建、备注等多步任务",
+      "Run/Step、SSE 事件、结构化输出和 tracing 更适合排查复杂客服流程",
+    ],
+    limitations: [
+      "可能产生多轮模型调用和工具调用，延迟与成本波动更大",
+      "需要更严格的权限、脱敏、guardrail 和回归测试",
+    ],
+  },
+  observedRun: metrics,
+});
 
 export const agentTools = [
   tool({
@@ -647,6 +772,7 @@ export async function createAgentChatResponse(input: {
   }
 
   const events: AgentEvent[] = [];
+  const startedAt = Date.now();
   const emit = async (event: AgentEvent) => {
     events.push(event);
   };
@@ -682,7 +808,7 @@ export async function createAgentChatResponse(input: {
     await db.updateAgentRun(runId, { status: "running" });
 
     const result = await withTimeout(
-      createAgentRunner().run(customerServiceAgent, agentInput, {
+      createAgentRunner(runId, "non_stream", input).run(customerServiceAgent, agentInput, {
         context: {
           runId,
           userId: input.userId,
@@ -710,6 +836,8 @@ export async function createAgentChatResponse(input: {
       assistantContent,
       events,
     });
+    const handoffEvaluation = evaluateAgentHandoff(structuredOutput);
+    const metrics = getRunMetrics(startedAt, events);
     await db.saveChatMessage({
       ticketId: input.ticketId,
       userId: input.userId,
@@ -727,8 +855,12 @@ export async function createAgentChatResponse(input: {
       llmModel: ENV.openAiModel,
       completedAt: new Date(),
       metadata: {
-        mode: "non_stream",
-        structuredOutput,
+        ...getAgentRunMetadata(runId, "non_stream", {
+          structuredOutput,
+          handoffEvaluation,
+          comparison: getAgentRagComparison(metrics),
+          metrics,
+        }),
       },
     });
 
@@ -825,6 +957,7 @@ export async function streamAgentChatResponse(
   }
 
   const events: AgentEvent[] = [];
+  const startedAt = Date.now();
   const capture = async (event: AgentEvent) => {
     events.push(event);
     await emit(event);
@@ -861,7 +994,7 @@ export async function streamAgentChatResponse(
     await emit(thinkingEvent);
     await db.updateAgentRun(runId, { status: "running" });
 
-    const result = await createAgentRunner().run(customerServiceAgent, agentInput, {
+    const result = await createAgentRunner(runId, "stream", input).run(customerServiceAgent, agentInput, {
       context: {
         runId,
         userId: input.userId,
@@ -902,6 +1035,8 @@ export async function streamAgentChatResponse(
       assistantContent,
       events,
     });
+    const handoffEvaluation = evaluateAgentHandoff(structuredOutput);
+    const metrics = getRunMetrics(startedAt, events);
     await db.saveChatMessage({
       ticketId: input.ticketId,
       userId: input.userId,
@@ -919,8 +1054,12 @@ export async function streamAgentChatResponse(
       llmModel: ENV.openAiModel,
       completedAt: new Date(),
       metadata: {
-        mode: "stream",
-        structuredOutput,
+        ...getAgentRunMetadata(runId, "stream", {
+          structuredOutput,
+          handoffEvaluation,
+          comparison: getAgentRagComparison(metrics),
+          metrics,
+        }),
       },
     });
 

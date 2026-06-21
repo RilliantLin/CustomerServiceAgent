@@ -3,6 +3,8 @@ export const ENV = {
   cookieSecret: process.env.JWT_SECRET ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",
   chatMode: process.env.CHAT_MODE ?? "rag",
+  agentTracingEnabled: process.env.AGENT_TRACING_ENABLED === "true",
+  agentHandoffsEnabled: process.env.AGENT_HANDOFFS_ENABLED === "true",
   llmProvider: process.env.LLM_PROVIDER ?? "manus",
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
