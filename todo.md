@@ -1,6 +1,7 @@
 # 客服工单 Agent 系统 - 阶段计划
 
 ## 阶段 0：本地开发与基础能力
+
 - [x] 使用 Docker 启动本地 PostgreSQL + pgvector 服务
 - [x] 修复数据库迁移，确保 `users` 与业务表可完整创建
 - [x] 初始化知识库、示例用户、示例工单和备注数据
@@ -10,6 +11,7 @@
 - [x] 跑通基础冒烟测试：首页、工单列表、管理员统计、后端 router 调用
 
 ## 阶段 1：接入 OpenAI LLM（先不引入 Agent SDK）
+
 - [x] 增加 OpenAI 环境变量：`LLM_PROVIDER`、`OPENAI_API_KEY`、`OPENAI_MODEL`
 - [x] 保留 Manus Forge 配置作为可选 fallback，不直接删除旧实现
 - [x] 将 `server/_core/llm.ts` 拆成 provider 分流：`manus` / `openai`
@@ -20,6 +22,7 @@
 - [ ] 验证智能客服在 OpenAI provider 下可正常回复并保存聊天记录（需要用户授权后向配置的 OpenAI endpoint 发送本地测试问题）
 
 ## 阶段 2：pgvector RAG（PostgreSQL 向量检索 + 关键词兜底）
+
 - [x] 增加 OpenAI embedding 环境变量：`OPENAI_EMBEDDING_MODEL`
 - [x] 增加代理兼容配置：`OPENAI_EMBEDDING_BASE_URL`、`OPENAI_EMBEDDING_PATH`
 - [x] 确认 `knowledge_base.embedding` pgvector 字段可用于存储向量
@@ -38,6 +41,7 @@
 - [x] 增加 RAG 质量测试用例：密码、退货、物流、保修等常见问题
 
 ## 阶段 3：提示词与客服回答质量
+
 - [x] 重写客服 system prompt，要求只基于检索知识回答
 - [x] 当知识库召回置信度低时，引导用户创建工单，而不是编造答案
 - [x] 增加回答格式规范：简洁结论、步骤、必要提醒、引用来源
@@ -47,11 +51,23 @@
 - [x] 记录 LLM provider、model、引用知识库 ID，方便后续排查
 
 ## 阶段 4：Agent SDK 版本（RAG 稳定后再做）
+
 - [ ] 引入 `@openai/agents`，只在服务端使用
 - [ ] 将知识库检索封装为 Agent tool：`searchKnowledge`
 - [ ] 将创建工单封装为 Agent tool：`createTicket`
 - [ ] 将查询工单封装为 Agent tool：`listTickets` / `getTicketById`
 - [ ] 将添加备注封装为 Agent tool：`addTicketNote`
+- [ ] 为 Agent tools 定义统一结构：`name`、`description`、`parameters` schema、`execute`
+- [ ] 使用 Zod / JSON Schema 校验工具入参，校验失败时返回可读错误并让 Agent 修正或兜底
+- [ ] 定义 Agent 执行事件格式：`thinking` / `tool_call` / `tool_result` / `final`
+- [ ] Agent tool 调用时通过 SSE 输出工具调用事件，便于前端实时展示执行过程
+- [ ] 对用户可见的工具参数和执行结果做脱敏与摘要，避免暴露敏感信息或过长原始数据
+- [ ] 增加工单查询 Agent 示例任务：根据自然语言查询客户最近工单并生成问题总结
+- [ ] 为需要稳定渲染或落库的 AI 结果定义结构化输出 schema，例如工单分类、风险等级、摘要、建议动作
+- [ ] 结构化输出在后端做校验，校验失败时尝试让模型修复或走人工处理兜底
+- [ ] 定义 Agent Run / Agent Step 数据模型，包含 `queued` / `planning` / `running` / `waiting_approval` / `failed` / `completed` 状态
+- [ ] 持久化 Agent Run 与步骤列表，支持刷新恢复、审计排查和后续失败重试
+- [ ] 提供 Agent Run 查询与重试 API：按 `runId` 获取状态、步骤、最终回答和错误信息
 - [ ] 设计客服 Agent 指令：优先回答，必要时创建工单或建议人工处理
 - [ ] 增加 guardrail：敏感信息、超出知识库范围、越权工单访问
 - [ ] 评估 handoff：普通客服、技术支持、售后/退款等多 Agent 分流
@@ -59,7 +75,13 @@
 - [ ] 对比 Agent SDK 版本与阶段 2 简单 RAG 版本的成本、延迟和稳定性
 
 ## 阶段 5：前端体验与管理能力
+
 - [ ] 聊天页显示 AI 回复加载状态、失败重试和引用来源
+- [ ] 聊天页展示 Agent 执行过程：分析中、工具调用、执行结果、最终回答
+- [ ] Agent 工具调用过程默认折叠，支持展开查看工具名、参数摘要和结果摘要
+- [ ] 拆分工具调用展示组件：`ToolCallCard`、`ToolTimeline`、`ToolArgsViewer`、`ToolResultViewer`、`ToolErrorPanel`
+- [ ] 聊天页支持渲染结构化 AI 结果，例如工单分类、风险等级、总结卡片和建议动作
+- [ ] 增加独立 Agent Run 详情页 `/runs/:runId`：用于管理员/开发者排查，展示完整状态、步骤、失败原因、重试入口，并支持刷新后恢复
 - [ ] 聊天页支持一键“转工单”，把当前对话摘要带入工单描述
 - [ ] 工单详情页显示关联聊天记录
 - [ ] 管理员增加知识库管理页面：新增、编辑、删除、重新生成 embedding
@@ -67,9 +89,13 @@
 - [ ] 普通用户访问受保护页面时，开发环境走本地登录，生产环境走 Manus OAuth
 
 ## 阶段 6：测试、观测与上线准备
+
 - [ ] 为 OpenAI provider 增加单元测试，mock Responses API 返回
 - [ ] 为 embedding / cosine similarity 增加单元测试
 - [ ] 为 `chat.sendMessage` 增加集成测试：召回、回复、保存消息
+- [ ] 为 Agent tool 入参校验、工具执行成功/失败、工具结果脱敏增加单元测试
+- [ ] 为结构化输出增加测试：schema 校验成功、缺字段兜底、模型修复失败兜底
+- [ ] 为 Agent Run 状态流转增加测试：创建、执行中、失败、重试、完成、刷新恢复
 - [ ] 增加基础 e2e 冒烟测试：登录、创建工单、查看列表、智能客服问答
 - [ ] 增加日志脱敏，避免记录 API key、session cookie、用户敏感内容
 - [ ] 增加成本与延迟观测：每次 LLM/embedding 调用耗时、token 使用量
