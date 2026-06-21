@@ -1,8 +1,9 @@
-import { eq, and, desc, like, inArray, isNotNull } from "drizzle-orm";
+import { eq, and, desc, like, inArray, isNotNull, sql } from "drizzle-orm";
 import { cosineDistance } from "drizzle-orm/sql/functions/vector";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { InsertUser, users, tickets, knowledgeBase, chatMessages, ticketNotes } from "../drizzle/schema";
+import { InsertUser, users, tickets, knowledgeBase, knowledgeDocuments, chatMessages, ticketNotes } from "../drizzle/schema";
+import type { KnowledgeDocumentStatus } from "../shared/knowledge";
 import { ENV } from './_core/env';
 import {
   createEmbedding,
@@ -246,6 +247,265 @@ export async function updateKnowledgeEmbedding(id: number, embedding: number[]) 
   return db.update(knowledgeBase)
     .set({ embedding, updatedAt: new Date() })
     .where(eq(knowledgeBase.id, id));
+}
+
+// ============ Knowledge Documents（上传文档） ============
+
+export async function createKnowledgeDocument(data: {
+  filename: string;
+  fileType: string;
+  uploadedBy?: number;
+  status?: KnowledgeDocumentStatus;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .insert(knowledgeDocuments)
+    .values({
+      filename: data.filename,
+      fileType: data.fileType,
+      status: data.status ?? "parsing",
+      uploadedBy: data.uploadedBy,
+    })
+    .returning({ id: knowledgeDocuments.id });
+
+  return result[0];
+}
+
+export async function updateKnowledgeDocument(
+  id: number,
+  data: Partial<{
+    status: KnowledgeDocumentStatus;
+    totalChunks: number;
+    error: string | null;
+  }>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db
+    .update(knowledgeDocuments)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(knowledgeDocuments.id, id));
+}
+
+export async function getKnowledgeDocument(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .select()
+    .from(knowledgeDocuments)
+    .where(eq(knowledgeDocuments.id, id))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function listKnowledgeDocuments() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const docs = await db
+    .select()
+    .from(knowledgeDocuments)
+    .orderBy(desc(knowledgeDocuments.createdAt));
+
+  const counts = await db
+    .select({
+      documentId: knowledgeBase.documentId,
+      embeddedCount: sql<number>`count(*) filter (where ${knowledgeBase.embeddingStatus} = 'completed')`.mapWith(Number),
+      failedCount: sql<number>`count(*) filter (where ${knowledgeBase.embeddingStatus} = 'failed')`.mapWith(Number),
+    })
+    .from(knowledgeBase)
+    .where(isNotNull(knowledgeBase.documentId))
+    .groupBy(knowledgeBase.documentId);
+
+  const countMap = new Map(counts.map(c => [c.documentId, c]));
+
+  return docs.map(doc => ({
+    ...doc,
+    embeddedCount: countMap.get(doc.id)?.embeddedCount ?? 0,
+    failedCount: countMap.get(doc.id)?.failedCount ?? 0,
+  }));
+}
+
+export async function addKnowledgeEntriesBatch(
+  documentId: number,
+  entries: Array<{
+    title: string;
+    content: string;
+    category: string;
+    keywords?: string;
+  }>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (entries.length === 0) return [];
+
+  return db
+    .insert(knowledgeBase)
+    .values(
+      entries.map(entry => ({
+        title: entry.title,
+        content: entry.content,
+        category: entry.category,
+        keywords: entry.keywords,
+        documentId,
+        embeddingStatus: "pending" as const,
+      }))
+    )
+    .returning({
+      id: knowledgeBase.id,
+      title: knowledgeBase.title,
+      content: knowledgeBase.content,
+      category: knowledgeBase.category,
+      keywords: knowledgeBase.keywords,
+    });
+}
+
+export async function setKnowledgeEntryEmbedding(
+  id: number,
+  embedding: number[]
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db
+    .update(knowledgeBase)
+    .set({ embedding, embeddingStatus: "completed", updatedAt: new Date() })
+    .where(eq(knowledgeBase.id, id));
+}
+
+export async function setKnowledgeEntryStatus(
+  id: number,
+  status: "pending" | "completed" | "failed"
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db
+    .update(knowledgeBase)
+    .set({ embeddingStatus: status, updatedAt: new Date() })
+    .where(eq(knowledgeBase.id, id));
+}
+
+/** 余弦相似度高于该阈值即视为内容冲突/重复。 */
+export const CONFLICT_SIMILARITY_THRESHOLD = 0.88;
+
+/**
+ * 判定某条目是否与「已有条目」冲突：
+ * 1) 向量最近邻余弦相似度 ≥ 阈值，或
+ * 2) 归一化标题（trim + lower）完全相同。
+ * 比较范围排除自身与同一文档内的条目，聚焦与已存在内容的冲突。
+ */
+export async function detectEntryConflict(
+  entry: {
+    id: number;
+    title: string;
+    documentId: number | null;
+    embedding: number[] | null;
+  },
+  threshold = CONFLICT_SIMILARITY_THRESHOLD
+): Promise<{ conflictWith: number; conflictScore: number } | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const notSameDoc =
+    entry.documentId == null
+      ? sql`true`
+      : sql`${knowledgeBase.documentId} IS DISTINCT FROM ${entry.documentId}`;
+  const notSelf = sql`${knowledgeBase.id} <> ${entry.id}`;
+
+  // 1) 向量最近邻
+  if (entry.embedding) {
+    const distance = cosineDistance(knowledgeBase.embedding, entry.embedding);
+    const rows = await db
+      .select({ id: knowledgeBase.id, distance })
+      .from(knowledgeBase)
+      .where(and(isNotNull(knowledgeBase.embedding), notSelf, notSameDoc))
+      .orderBy(distance)
+      .limit(1);
+
+    const top = rows[0];
+    if (top) {
+      const score = 1 - Number(top.distance);
+      if (score >= threshold) {
+        return { conflictWith: top.id, conflictScore: score };
+      }
+    }
+  }
+
+  // 2) 归一化标题精确匹配
+  const titleRows = await db
+    .select({ id: knowledgeBase.id })
+    .from(knowledgeBase)
+    .where(
+      and(
+        notSelf,
+        notSameDoc,
+        sql`lower(btrim(${knowledgeBase.title})) = lower(btrim(${entry.title}))`
+      )
+    )
+    .limit(1);
+
+  if (titleRows[0]) {
+    return { conflictWith: titleRows[0].id, conflictScore: 1 };
+  }
+
+  return null;
+}
+
+export async function setEntryConflict(
+  id: number,
+  conflictWith: number | null,
+  conflictScore: number | null
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db
+    .update(knowledgeBase)
+    .set({ conflictWith, conflictScore })
+    .where(eq(knowledgeBase.id, id));
+}
+
+export async function deleteKnowledgeEntry(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db.transaction(async tx => {
+    const rows = await tx
+      .select({ documentId: knowledgeBase.documentId })
+      .from(knowledgeBase)
+      .where(eq(knowledgeBase.id, id))
+      .limit(1);
+
+    await tx.delete(knowledgeBase).where(eq(knowledgeBase.id, id));
+
+    // Keep the source document's progress denominator consistent.
+    const documentId = rows[0]?.documentId;
+    if (documentId != null) {
+      await tx
+        .update(knowledgeDocuments)
+        .set({
+          totalChunks: sql`GREATEST(${knowledgeDocuments.totalChunks} - 1, 0)`,
+          updatedAt: new Date(),
+        })
+        .where(eq(knowledgeDocuments.id, documentId));
+    }
+  });
+}
+
+export async function deleteKnowledgeDocument(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db.transaction(async tx => {
+    await tx.delete(knowledgeBase).where(eq(knowledgeBase.documentId, id));
+    await tx.delete(knowledgeDocuments).where(eq(knowledgeDocuments.id, id));
+  });
 }
 
 async function fallbackSearchKnowledge(query: string, limit: number) {

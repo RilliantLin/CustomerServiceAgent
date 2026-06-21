@@ -5,6 +5,7 @@ import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import { createChatResponse, parseJsonValue } from "./chatService";
+import { ingestDocument } from "./knowledge/ingest";
 
 export const appRouter = router({
   system: systemRouter,
@@ -187,6 +188,58 @@ export const appRouter = router({
           throw new Error("Unauthorized");
         }
         return await db.addKnowledgeEntry(input);
+      }),
+
+    // 上传文档（Markdown/CSV），解析为知识条目并后台向量化（仅管理员）
+    uploadDocument: protectedProcedure
+      .input(z.object({
+        filename: z.string().min(1).max(255),
+        fileType: z.enum(["markdown", "csv"]),
+        content: z.string().min(1),
+        category: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.user.role !== "admin") {
+          throw new Error("Unauthorized");
+        }
+        return await ingestDocument({
+          filename: input.filename,
+          fileType: input.fileType,
+          content: input.content,
+          category: input.category,
+          userId: ctx.user.id,
+        });
+      }),
+
+    // 文档列表（含解析状态与索引进度，仅管理员）
+    listDocuments: protectedProcedure
+      .query(async ({ ctx }) => {
+        if (ctx.user.role !== "admin") {
+          throw new Error("Unauthorized");
+        }
+        return await db.listKnowledgeDocuments();
+      }),
+
+    // 删除文档及其生成的全部知识条目（仅管理员）
+    deleteDocument: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.user.role !== "admin") {
+          throw new Error("Unauthorized");
+        }
+        await db.deleteKnowledgeDocument(input.id);
+        return { success: true };
+      }),
+
+    // 删除单条知识条目（仅管理员）
+    deleteEntry: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.user.role !== "admin") {
+          throw new Error("Unauthorized");
+        }
+        await db.deleteKnowledgeEntry(input.id);
+        return { success: true };
       }),
   }),
 

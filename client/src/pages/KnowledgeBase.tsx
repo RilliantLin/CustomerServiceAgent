@@ -6,10 +6,24 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import PageNav from "@/components/PageNav";
+import KnowledgeDocuments from "@/components/KnowledgeDocuments";
 import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
+import { toast } from "sonner";
+import { Trash2, AlertTriangle } from "lucide-react";
 
 function useDebouncedValue<T>(value: T, delay: number) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -31,13 +45,40 @@ export default function KnowledgeBase() {
   const query = rawQuery.length === 0 ? "" : debouncedSearch.trim();
   const isDebouncing = rawQuery.length > 0 && rawQuery !== query;
 
+  const utils = trpc.useUtils();
   const { data: entries, isLoading: listLoading } = trpc.knowledge.list.useQuery();
   const { data: searchResults, isLoading: searchLoading } = trpc.knowledge.search.useQuery(
     { query, limit: 50 },
     { enabled: query.length > 0 }
   );
 
-  const visibleEntries = query.length > 0 ? searchResults : entries;
+  const deleteEntryMutation = trpc.knowledge.deleteEntry.useMutation();
+
+  const handleDeleteEntry = async (id: number) => {
+    try {
+      await deleteEntryMutation.mutateAsync({ id });
+      await Promise.all([
+        utils.knowledge.list.invalidate(),
+        utils.knowledge.search.invalidate(),
+        utils.knowledge.listDocuments.invalidate(),
+      ]);
+      toast.success("已删除该条目");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除失败");
+    }
+  };
+
+  const rawVisibleEntries = query.length > 0 ? searchResults : entries;
+  // 冲突条目置顶，其余按更新时间从近到远排序。
+  const visibleEntries = useMemo(() => {
+    if (!rawVisibleEntries) return rawVisibleEntries;
+    return [...rawVisibleEntries].sort((a, b) => {
+      const aConflict = a.conflictWith != null ? 1 : 0;
+      const bConflict = b.conflictWith != null ? 1 : 0;
+      if (aConflict !== bConflict) return bConflict - aConflict;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
+  }, [rawVisibleEntries]);
   const isLoading = isDebouncing || (query.length > 0 ? searchLoading : listLoading);
 
   const categoryCounts = useMemo(() => {
@@ -46,6 +87,12 @@ export default function KnowledgeBase() {
       counts.set(entry.category, (counts.get(entry.category) ?? 0) + 1);
     }
     return Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [entries]);
+
+  const entryTitleById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const entry of entries ?? []) map.set(entry.id, entry.title);
+    return map;
   }, [entries]);
 
   if (user && user.role !== "admin") {
@@ -79,6 +126,8 @@ export default function KnowledgeBase() {
             返回仪表盘
           </Button>
         </div>
+
+        <KnowledgeDocuments />
 
         <Card className="mb-6">
           <CardContent className="pt-6">
@@ -148,20 +197,69 @@ export default function KnowledgeBase() {
                           <div className="flex flex-wrap items-center gap-2 mb-2">
                             <h3 className="text-lg font-semibold text-gray-900">{entry.title}</h3>
                             <Badge className="bg-blue-100 text-blue-800">{entry.category}</Badge>
+                            {entry.conflictWith != null && (
+                              <Badge className="bg-amber-100 text-amber-800 gap-1">
+                                <AlertTriangle className="w-3 h-3" />
+                                可能冲突
+                                {entry.conflictScore != null
+                                  ? ` ${Math.round(entry.conflictScore * 100)}%`
+                                  : ""}
+                              </Badge>
+                            )}
                           </div>
                           <p className="text-gray-700 whitespace-pre-wrap leading-7">{entry.content}</p>
+                          {entry.conflictWith != null && (
+                            <p className="text-sm text-amber-700 mt-2">
+                              与已有条目
+                              {entryTitleById.has(entry.conflictWith)
+                                ? `「${entryTitleById.get(entry.conflictWith)}」`
+                                : ""}
+                              内容相近，请确认是否重复
+                            </p>
+                          )}
                           {entry.keywords && (
                             <p className="text-sm text-gray-500 mt-3">关键词：{entry.keywords}</p>
                           )}
                         </div>
-                        <div className="text-sm text-gray-500 md:text-right md:min-w-28">
-                          <p>更新于</p>
-                          <p className="font-medium">
-                            {formatDistanceToNow(new Date(entry.updatedAt), {
-                              locale: zhCN,
-                              addSuffix: true,
-                            })}
-                          </p>
+                        <div className="flex items-start gap-3 md:flex-col md:items-end">
+                          <div className="text-sm text-gray-500 md:text-right md:min-w-28">
+                            <p>更新于</p>
+                            <p className="font-medium">
+                              {formatDistanceToNow(new Date(entry.updatedAt), {
+                                locale: zhCN,
+                                addSuffix: true,
+                              })}
+                            </p>
+                          </div>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-gray-400 hover:text-red-600"
+                                aria-label="删除条目"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>删除条目？</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  将删除「{entry.title}」，此操作不可撤销。
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>取消</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteEntry(entry.id)}
+                                  className="bg-red-600 hover:bg-red-700"
+                                >
+                                  删除
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </div>
                     </CardContent>

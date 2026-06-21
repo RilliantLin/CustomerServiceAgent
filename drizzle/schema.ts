@@ -5,12 +5,14 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  real,
   serial,
   text,
   timestamp,
   varchar,
   vector,
 } from "drizzle-orm/pg-core";
+import { KNOWLEDGE_DOCUMENT_STATUSES } from "../shared/knowledge";
 
 export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
 export const ticketStatusEnum = pgEnum("ticket_status", [
@@ -34,6 +36,9 @@ export const ticketNoteTypeEnum = pgEnum("ticket_note_type", [
 export const chatMessageRoleEnum = pgEnum("chat_message_role", [
   "user",
   "assistant",
+]);
+export const knowledgeDocumentStatusEnum = pgEnum("knowledge_document_status", [
+  ...KNOWLEDGE_DOCUMENT_STATUSES,
 ]);
 
 /**
@@ -109,15 +114,20 @@ export type InsertTicketNote = typeof ticketNotes.$inferInsert;
  */
 export const knowledgeBase = pgTable("knowledge_base", {
   id: serial("id").primaryKey(),
-  title: varchar("title", { length: 255 }).notNull().unique(), // 知识库条目标题
+  title: varchar("title", { length: 255 }).notNull(), // 知识库条目标题（导入文档时标题可能重复，故不再全局唯一）
   content: text("content").notNull(), // 知识库条目内容
   category: varchar("category", { length: 100 }).notNull(), // 分类（FAQ、产品说明、政策等）
   keywords: text("keywords"), // 关键词（逗号分隔）
   embedding: vector("embedding", { dimensions: 1024 }), // BAAI/bge-m3 向量嵌入
+  documentId: integer("documentId"), // 来源上传文档 ID（手动添加的条目为 null）
+  embeddingStatus: varchar("embeddingStatus", { length: 16 }).default("pending").notNull(), // pending | completed | failed
+  conflictWith: integer("conflictWith"), // 检测到内容/标题冲突时，指向最相似的已有条目 ID
+  conflictScore: real("conflictScore"), // 与冲突条目的相似度（0~1，标题精确匹配记为 1）
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   categoryIdx: index("idx_category").on(table.category),
+  documentIdIdx: index("idx_knowledge_base_documentId").on(table.documentId),
   embeddingIdx: index("idx_knowledge_base_embedding_hnsw")
     .using("hnsw", table.embedding.op("vector_cosine_ops"))
     .where(sql`${table.embedding} IS NOT NULL`),
@@ -125,6 +135,27 @@ export const knowledgeBase = pgTable("knowledge_base", {
 
 export type KnowledgeBase = typeof knowledgeBase.$inferSelect;
 export type InsertKnowledgeBase = typeof knowledgeBase.$inferInsert;
+
+/**
+ * Knowledge documents table - 知识库文档表
+ * 记录上传的 Markdown/CSV 文件及其解析、索引状态；一个文档可生成多条 knowledge_base 条目
+ */
+export const knowledgeDocuments = pgTable("knowledge_documents", {
+  id: serial("id").primaryKey(),
+  filename: varchar("filename", { length: 255 }).notNull(), // 原始文件名
+  fileType: varchar("fileType", { length: 16 }).notNull(), // markdown | csv
+  status: knowledgeDocumentStatusEnum("status").default("pending").notNull(),
+  totalChunks: integer("totalChunks").default(0).notNull(), // 解析出的条目总数（进度分母）
+  error: text("error"), // 失败原因
+  uploadedBy: integer("uploadedBy"), // 上传者用户 ID
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  statusIdx: index("idx_knowledge_documents_status").on(table.status),
+}));
+
+export type KnowledgeDocument = typeof knowledgeDocuments.$inferSelect;
+export type InsertKnowledgeDocument = typeof knowledgeDocuments.$inferInsert;
 
 /**
  * Chat messages table - 聊天记录表

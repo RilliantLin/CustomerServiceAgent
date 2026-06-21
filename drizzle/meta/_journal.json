@@ -8,6 +8,20 @@
       "when": 1781707426527,
       "tag": "0001_normal_paibok",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782019550204,
+      "tag": "0001_right_thaddeus_ross",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782021445965,
+      "tag": "0002_silent_mister_sinister",
+      "breakpoints": true
     }
   ]
 }

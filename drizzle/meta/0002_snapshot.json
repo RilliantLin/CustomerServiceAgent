@@ -1,6 +1,6 @@
 {
-  "id": "11983ca9-b6ae-446a-9f36-b86c2da0d1c1",
-  "prevId": "cfbaef6c-4045-442a-8ebf-cb9945ce6d13",
+  "id": "5469e46b-f68e-46c3-8c0c-58a4b6acbfb4",
+  "prevId": "11983ca9-b6ae-446a-9f36-b86c2da0d1c1",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -162,6 +162,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'pending'"
+        },
+        "conflictWith": {
+          "name": "conflictWith",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "conflictScore": {
+          "name": "conflictScore",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
         },
         "createdAt": {
           "name": "createdAt",
