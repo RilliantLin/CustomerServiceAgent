@@ -52,16 +52,16 @@
 
 ## 阶段 4：Agent SDK 版本（RAG 稳定后再做）
 
-- [ ] 引入 `@openai/agents`，只在服务端使用
-- [ ] 将知识库检索封装为 Agent tool：`searchKnowledge`
-- [ ] 将创建工单封装为 Agent tool：`createTicket`
-- [ ] 将查询工单封装为 Agent tool：`listTickets` / `getTicketById`
-- [ ] 将添加备注封装为 Agent tool：`addTicketNote`
-- [ ] 为 Agent tools 定义统一结构：`name`、`description`、`parameters` schema、`execute`
-- [ ] 使用 Zod / JSON Schema 校验工具入参，校验失败时返回可读错误并让 Agent 修正或兜底
-- [ ] 定义 Agent 执行事件格式：`thinking` / `tool_call` / `tool_result` / `final`
-- [ ] Agent tool 调用时通过 SSE 输出工具调用事件，便于前端实时展示执行过程
-- [ ] 对用户可见的工具参数和执行结果做脱敏与摘要，避免暴露敏感信息或过长原始数据
+- [x] 引入 `@openai/agents`，只在服务端使用
+- [x] 将知识库检索封装为 Agent tool：`searchKnowledge`
+- [x] 将创建工单封装为 Agent tool：`createTicket`
+- [x] 将查询工单封装为 Agent tool：`listTickets` / `getTicketById`
+- [x] 将添加备注封装为 Agent tool：`addTicketNote`
+- [x] 为 Agent tools 定义统一结构：`name`、`description`、`parameters` schema、`execute`
+- [x] 使用 Zod / JSON Schema 校验工具入参，校验失败时返回可读错误并让 Agent 修正或兜底
+- [x] 定义 Agent 执行事件格式：`thinking` / `tool_call` / `tool_result` / `final`
+- [x] Agent tool 调用时通过 SSE 输出工具调用事件，便于前端实时展示执行过程
+- [x] 对用户可见的工具参数和执行结果做脱敏与摘要，避免暴露敏感信息或过长原始数据
 - [ ] 增加工单查询 Agent 示例任务：根据自然语言查询客户最近工单并生成问题总结
 - [ ] 为需要稳定渲染或落库的 AI 结果定义结构化输出 schema，例如工单分类、风险等级、摘要、建议动作
 - [ ] 结构化输出在后端做校验，校验失败时尝试让模型修复或走人工处理兜底

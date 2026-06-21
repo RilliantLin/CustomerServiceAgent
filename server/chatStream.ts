@@ -3,6 +3,7 @@ import { ENV } from "./_core/env";
 import { streamLLM } from "./_core/llm";
 import { sdk } from "./_core/sdk";
 import * as db from "./db";
+import { streamAgentChatResponse, type AgentEvent } from "./agentService";
 import {
   LLM_TIMEOUT_MS,
   prepareChatResponse,
@@ -15,6 +16,10 @@ type SsePayload =
       llmProvider: string;
     }
   | { type: "delta"; content: string }
+  | {
+      type: "agent_event";
+      event: AgentEvent;
+    }
   | { type: "done"; llmProvider: string; llmModel?: string }
   | { type: "error"; message: string };
 
@@ -61,6 +66,36 @@ export function registerChatStreamRoutes(app: Express) {
       if (!content) {
         res.statusCode = 400;
         writeSse(res, { type: "error", message: "消息内容不能为空" });
+        return;
+      }
+
+      if (ENV.chatMode === "agent") {
+        const result = await streamAgentChatResponse(
+          {
+            userId: user.id,
+            userRole: user.role,
+            ticketId,
+            content,
+          },
+          abortController.signal,
+          event => {
+            writeSse(res, { type: "agent_event", event });
+            if (event.type === "final") {
+              writeSse(res, { type: "delta", content: event.content });
+            }
+          }
+        );
+
+        writeSse(res, {
+          type: "meta",
+          relatedKnowledge: result.relatedKnowledgeSnapshot,
+          llmProvider: "openai-agents",
+        });
+        writeSse(res, {
+          type: "done",
+          llmProvider: "openai-agents",
+          llmModel: ENV.openAiModel,
+        });
         return;
       }
 

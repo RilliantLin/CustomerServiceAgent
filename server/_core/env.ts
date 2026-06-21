@@ -2,6 +2,7 @@ export const ENV = {
   appId: process.env.VITE_APP_ID ?? "",
   cookieSecret: process.env.JWT_SECRET ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",
+  chatMode: process.env.CHAT_MODE ?? "rag",
   llmProvider: process.env.LLM_PROVIDER ?? "manus",
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",

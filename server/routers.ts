@@ -5,7 +5,9 @@ import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import { createChatResponse, parseJsonValue } from "./chatService";
+import { createAgentChatResponse } from "./agentService";
 import { ingestDocument } from "./knowledge/ingest";
+import { ENV } from "./_core/env";
 
 export const appRouter = router({
   system: systemRouter,
@@ -296,6 +298,15 @@ export const appRouter = router({
         content: z.string().min(1),
       }))
       .mutation(async ({ input, ctx }) => {
+        if (ENV.chatMode === "agent") {
+          return createAgentChatResponse({
+            userId: ctx.user.id,
+            userRole: ctx.user.role,
+            ticketId: input.ticketId,
+            content: input.content,
+          });
+        }
+
         return createChatResponse({
           userId: ctx.user.id,
           ticketId: input.ticketId,
