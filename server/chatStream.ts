@@ -33,9 +33,23 @@ const writeSse = (res: Response, payload: SsePayload) => {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 };
 
-const sendSseError = (res: Response, error: unknown) => {
+const getPublicErrorMessage = (error: unknown) => {
   const message =
     error instanceof Error ? error.message : "发送消息失败，请稍后重试";
+
+  if (
+    /^Failed query:/i.test(message) ||
+    /insert into "agent_runs"/i.test(message) ||
+    /relation "agent_runs" does not exist/i.test(message)
+  ) {
+    return "Agent 运行记录写入失败，请确认数据库迁移已执行后重试。";
+  }
+
+  return message;
+};
+
+const sendSseError = (res: Response, error: unknown) => {
+  const message = getPublicErrorMessage(error);
   writeSse(res, { type: "error", message });
 };
 

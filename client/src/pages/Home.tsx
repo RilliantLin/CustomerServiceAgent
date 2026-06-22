@@ -1,6 +1,8 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { getDevLoginUrl, getLoginUrl, isDevLoginEnabled } from "@/const";
 
@@ -8,6 +10,7 @@ export default function Home() {
   const { user, isAuthenticated, logout, loading } = useAuth();
   const [, setLocation] = useLocation();
   const showDevLogin = isDevLoginEnabled();
+  const [runId, setRunId] = useState("");
 
   if (loading) {
     return (
@@ -267,6 +270,35 @@ export default function Home() {
                   <p className="text-gray-600">
                     查看和搜索客服知识条目
                   </p>
+                </CardContent>
+              </Card>
+
+              <Card className="hover:shadow-lg transition-shadow">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <span className="text-3xl">🧭</span>
+                    Agent Run 排查
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="mb-3 text-gray-600">
+                    输入 Run ID 查看执行步骤、错误原因和重试入口
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      inputMode="numeric"
+                      placeholder="Run ID"
+                      value={runId}
+                      onChange={(event) => setRunId(event.target.value.replace(/\D/g, ""))}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                    <Button
+                      disabled={!runId}
+                      onClick={() => setLocation(`/runs/${runId}`)}
+                    >
+                      查看
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </>

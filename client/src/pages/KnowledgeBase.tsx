@@ -295,8 +295,8 @@ export default function KnowledgeBase() {
                 {visibleEntries.map((entry) => (
                   <Card key={entry.id}>
                     <CardContent className="pt-6">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div className="min-w-0">
+                      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_160px]">
+                        <div className="min-w-0 break-words">
                           <div className="flex flex-wrap items-center gap-2 mb-2">
                             <h3 className="text-lg font-semibold text-gray-900">{entry.title}</h3>
                             <Badge className="bg-blue-100 text-blue-800">{entry.category}</Badge>
@@ -310,7 +310,7 @@ export default function KnowledgeBase() {
                               </Badge>
                             )}
                           </div>
-                          <p className="text-gray-700 whitespace-pre-wrap leading-7">{entry.content}</p>
+                          <p className="whitespace-pre-wrap break-words text-gray-700 leading-7">{entry.content}</p>
                           {entry.conflictWith != null && (
                             <p className="text-sm text-amber-700 mt-2">
                               与已有条目
@@ -324,8 +324,8 @@ export default function KnowledgeBase() {
                             <p className="text-sm text-gray-500 mt-3">关键词：{entry.keywords}</p>
                           )}
                         </div>
-                        <div className="flex items-start gap-3 md:flex-col md:items-end">
-                          <div className="text-sm text-gray-500 md:text-right md:min-w-28">
+                        <div className="flex items-start justify-between gap-3 md:flex-col md:items-end">
+                          <div className="shrink-0 text-sm text-gray-500 md:text-right md:w-40">
                             <p>更新于</p>
                             <p className="font-medium">
                               {formatDistanceToNow(new Date(entry.updatedAt), {
@@ -333,11 +333,11 @@ export default function KnowledgeBase() {
                                 addSuffix: true,
                               })}
                             </p>
-                            <p className="mt-1 text-xs">
+                            <p className="mt-1 break-words text-xs">
                               embedding：{entry.embeddingStatus}
                             </p>
                           </div>
-                          <div className="flex items-center gap-1">
+                          <div className="flex shrink-0 items-center gap-1">
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Button
@@ -365,35 +365,35 @@ export default function KnowledgeBase() {
                               </TooltipTrigger>
                               <TooltipContent>重新生成 embedding</TooltipContent>
                             </Tooltip>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-gray-400 hover:text-red-600"
-                                aria-label="删除条目"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>删除条目？</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  将删除「{entry.title}」，此操作不可撤销。
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>取消</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => handleDeleteEntry(entry.id)}
-                                  className="bg-red-600 hover:bg-red-700"
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-gray-400 hover:text-red-600"
+                                  aria-label="删除条目"
                                 >
-                                  删除
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>删除条目？</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    将删除「{entry.title}」，此操作不可撤销。
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>取消</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => handleDeleteEntry(entry.id)}
+                                    className="bg-red-600 hover:bg-red-700"
+                                  >
+                                    删除
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           </div>
                         </div>
                       </div>

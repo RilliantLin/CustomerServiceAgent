@@ -60,6 +60,23 @@ type ChatMessage = {
   sourcePrompt?: string;
 };
 
+const trimText = (value: string, maxLength: number) => {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (compact.length <= maxLength) return compact;
+  return `${compact.slice(0, maxLength - 1)}…`;
+};
+
+const getPreviousUserPrompt = (messages: ChatMessage[], messageId: string) => {
+  const index = messages.findIndex(message => message.id === messageId);
+  for (let cursor = index - 1; cursor >= 0; cursor--) {
+    const message = messages[cursor];
+    if (message?.role === "user" && message.content.trim()) {
+      return message.content.trim();
+    }
+  }
+  return "";
+};
+
 const categoryLabels: Record<string, string> = {
   account: "账户",
   order: "订单",
@@ -85,31 +102,31 @@ const riskClasses: Record<string, string> = {
   urgent: "bg-red-50 text-red-700 border-red-200",
 };
 
-const buildTicketDraft = (message: ChatMessage) => {
+const buildTicketDraft = (message: ChatMessage, userPrompt: string) => {
   const structured = message.structuredOutput;
   const references =
     message.relatedKnowledge && message.relatedKnowledge.length > 0
       ? message.relatedKnowledge.map(kb => `- ${kb.title}`).join("\n")
       : "无";
+  const summary =
+    structured?.summary || trimText(message.content, 240) || "用户需要人工跟进。";
+  const actions = structured?.suggestedActions?.filter(Boolean) ?? [];
+  const titleSource = userPrompt || summary;
 
   return {
-    title: structured?.summary
-      ? structured.summary.slice(0, 80)
-      : "智能客服转人工跟进",
+    title: trimText(titleSource, 48) || "客服问题跟进",
     description: [
       "来源：智能客服对话",
       message.runId ? `Agent Run：#${message.runId}` : "",
+      userPrompt ? `用户问题：${userPrompt}` : "",
       "",
-      "问题摘要：",
-      structured?.summary || message.content.slice(0, 500) || "用户需要人工跟进。",
+      "AI 摘要：",
+      summary,
       "",
       "建议动作：",
-      structured?.suggestedActions?.length
-        ? structured.suggestedActions.map(action => `- ${action}`).join("\n")
+      actions.length
+        ? actions.map(action => `- ${action}`).join("\n")
         : "- 请客服确认用户诉求并继续处理",
-      "",
-      "AI 回复：",
-      message.content,
       "",
       "引用知识库：",
       references,
@@ -265,6 +282,14 @@ export default function SmartChat() {
         }
 
         if (payload.type === "error") {
+          if (receivedContent) {
+            updateAssistant(assistantId, message => ({
+              ...message,
+              isStreaming: false,
+            }));
+            toast.error(payload.message || "回复已生成，但收尾状态同步失败");
+            return;
+          }
           throw new Error(payload.message || "发送消息失败，请稍后重试");
         }
       };
@@ -311,7 +336,10 @@ export default function SmartChat() {
   };
 
   const openTicketDraft = (message: ChatMessage) => {
-    const draft = buildTicketDraft(message);
+    const draft = buildTicketDraft(
+      message,
+      message.sourcePrompt || getPreviousUserPrompt(messages, message.id)
+    );
     setTicketDraft({
       sourceMessageId: message.id,
       title: draft.title,
@@ -555,7 +583,7 @@ export default function SmartChat() {
       </div>
 
       <Dialog open={Boolean(ticketDraft)} onOpenChange={open => !open && setTicketDraft(null)}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="max-h-[calc(100vh-2rem)] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>转为工单</DialogTitle>
             <DialogDescription>
@@ -563,7 +591,7 @@ export default function SmartChat() {
             </DialogDescription>
           </DialogHeader>
           {ticketDraft ? (
-            <div className="space-y-4">
+            <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-700">
                   工单标题
@@ -581,7 +609,8 @@ export default function SmartChat() {
                 </label>
                 <Textarea
                   value={ticketDraft.description}
-                  rows={10}
+                  rows={12}
+                  className="max-h-[45vh] overflow-y-auto"
                   onChange={event =>
                     setTicketDraft({
                       ...ticketDraft,

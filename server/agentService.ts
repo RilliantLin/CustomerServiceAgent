@@ -1011,14 +1011,34 @@ export async function streamAgentChatResponse(
     let assistantContent = "";
     const textStream = result.toTextStream({ compatibleWithNodeStreams: true });
 
-    for await (const value of textStream) {
-      const chunk = Buffer.isBuffer(value) ? value.toString("utf8") : String(value);
-      if (!chunk) continue;
-      assistantContent += chunk;
-      await emitDelta?.(chunk);
+    try {
+      for await (const value of textStream) {
+        const chunk = Buffer.isBuffer(value) ? value.toString("utf8") : String(value);
+        if (!chunk) continue;
+        assistantContent += chunk;
+        await emitDelta?.(chunk);
+      }
+    } catch (streamError) {
+      if (!assistantContent) {
+        throw streamError;
+      }
+      console.warn(
+        "[Agent] Text stream reported an error after content was emitted:",
+        streamError
+      );
     }
 
-    await result.completed;
+    try {
+      await result.completed;
+    } catch (completionError) {
+      if (!assistantContent) {
+        throw completionError;
+      }
+      console.warn(
+        "[Agent] Stream completion reported an error after content was emitted:",
+        completionError
+      );
+    }
 
     if (!assistantContent) {
       assistantContent = "抱歉，我无法处理您的请求。";

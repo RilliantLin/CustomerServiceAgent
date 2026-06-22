@@ -872,7 +872,7 @@ export async function createAgentRun(data: {
       llmProvider: data.llmProvider,
       llmModel: data.llmModel,
       retryOfRunId: data.retryOfRunId,
-      metadata: data.metadata,
+      metadata: data.metadata ? JSON.stringify(data.metadata) as any : undefined,
     })
     .returning({ id: agentRuns.id });
 
@@ -893,13 +893,17 @@ export async function updateAgentRun(
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const updateData: Record<string, unknown> = {
+    ...data,
+    updatedAt: new Date(),
+  };
+  if (data.metadata !== undefined && data.metadata !== null) {
+    updateData.metadata = JSON.stringify(data.metadata);
+  }
 
   return db
     .update(agentRuns)
-    .set({
-      ...data,
-      updatedAt: new Date(),
-    })
+    .set(updateData as any)
     .where(eq(agentRuns.id, id));
 }
 
@@ -915,10 +919,14 @@ export async function addAgentRunStep(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const values = {
+    ...data,
+    metadata: data.metadata ? JSON.stringify(data.metadata) as any : undefined,
+  };
 
   const result = await db
     .insert(agentRunSteps)
-    .values(data)
+    .values(values)
     .returning({ id: agentRunSteps.id });
 
   return result[0];

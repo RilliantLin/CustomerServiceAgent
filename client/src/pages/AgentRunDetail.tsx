@@ -47,10 +47,18 @@ const riskLabels: Record<string, string> = {
   urgent: "紧急",
 };
 
-const getMetadata = (metadata: unknown) =>
-  metadata && typeof metadata === "object"
-    ? (metadata as Record<string, any>)
-    : {};
+const getMetadata = (metadata: unknown) => {
+  if (metadata && typeof metadata === "object") {
+    return metadata as Record<string, any>;
+  }
+  if (typeof metadata !== "string") return {};
+
+  try {
+    return JSON.parse(metadata);
+  } catch {
+    return {};
+  }
+};
 
 export default function AgentRunDetail({ params }: AgentRunDetailProps) {
   const [, setLocation] = useLocation();
