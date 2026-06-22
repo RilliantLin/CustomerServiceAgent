@@ -1,6 +1,6 @@
 # 客服工单 Agent 系统
 
-AI 驱动的客服工单系统，覆盖工单全生命周期管理、基于 RAG/Agent 的智能客服、知识库维护、Agent Run 可观测排查与上线准备。
+AI 驱动的客服工单系统，覆盖工单全生命周期管理、基于 RAG/Agent 的智能客服、知识库维护、Agent Run 可观测排查与 demo 上线。
 
 ## 技术栈
 
@@ -8,9 +8,9 @@ AI 驱动的客服工单系统，覆盖工单全生命周期管理、基于 RAG/
 - 数据与接口：tRPC 11、React Query
 - 后端：Express 4、OpenAI Agents SDK
 - 数据库：PostgreSQL 16 + pgvector、Drizzle ORM
-- 向量服务：本地 bge-m3 / OpenAI / Voyage
+- 向量服务：本地 `BAAI/bge-small-zh-v1.5`（512 维）/ OpenAI / Voyage
 - LLM：OpenAI Responses API / Manus Forge 兼容路径
-- 认证：Manus OAuth，本地开发支持 dev-login
+- 认证：demo 本地登录，保留 Manus OAuth callback 作为可选兼容路径
 
 ## 核心能力
 
@@ -38,12 +38,12 @@ pnpm dev
 - PostgreSQL：localhost:5432
 - 本地 embedding 服务：http://localhost:8080
 
-本地开发登录：
+demo 登录：
 
-- 普通用户：http://localhost:3000/api/dev-login
+- 普通用户：http://localhost:3000/api/dev-login?role=user
 - 管理员：http://localhost:3000/api/dev-login?role=admin
 
-`/api/dev-login` 仅在 `NODE_ENV=development` 生效，生产环境会返回 404。
+当前 demo 版本在生产环境也启用 `/api/dev-login`，用于快速展示普通用户和管理员视角。
 
 ## 环境变量
 
@@ -61,6 +61,9 @@ cp .env.example .env
 - `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`：OpenAI 兼容模型配置。
 - `CHAT_MODE=rag|agent`：直接 RAG 或 Agent SDK 模式。
 - `EMBEDDING_PROVIDER=local|openai|voyage`：embedding provider。
+- `LOCAL_EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5`：本地 embedding 对外模型名，向量维度为 512。
+- `LOCAL_EMBEDDING_RUNTIME_MODEL=Xenova/bge-small-zh-v1.5`：app 内置 Transformers.js endpoint 的运行模型。
+- `LOCAL_EMBEDDING_API_KEY`：可选；设置后 `/v1/embeddings` 需要 Bearer token。
 - `RAG_EMBEDDINGS_ENABLED=true|false`：关闭后使用关键词检索兜底。
 - `AGENT_TRACING_ENABLED=false`：开启 OpenAI Agents tracing 时仍不包含敏感原始数据。
 
@@ -102,7 +105,7 @@ test-data/       知识库导入测试数据
 - `chat.sendMessage` 召回、回复、保存消息
 - Agent tool 入参校验、结果摘要、结构化输出兜底
 - Agent Run 状态与步骤类型
-- 本地开发登录生产限制
+- demo 登录
 - 认证登出、知识库解析、基础工单 smoke flow
 
 运行：
@@ -112,11 +115,37 @@ pnpm check
 pnpm test
 ```
 
+## Railway Demo 部署
+
+当前 demo 已部署在 Railway：
+
+- 应用：[https://app-production-35d3.up.railway.app](https://app-production-35d3.up.railway.app)
+- 登录：`/api/dev-login?role=user` 或 `/api/dev-login?role=admin`
+- 数据库：Railway Postgres + pgvector
+- Embedding：app 内置 `/v1/embeddings`，运行 `Xenova/bge-small-zh-v1.5`，返回 512 维向量
+
+Railway app 关键变量：
+
+```bash
+EMBEDDING_PROVIDER=local
+LOCAL_EMBEDDING_BASE_URL=http://127.0.0.1:8080
+LOCAL_EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
+LOCAL_EMBEDDING_RUNTIME_MODEL=Xenova/bge-small-zh-v1.5
+LOCAL_EMBEDDING_PATH=/v1/embeddings
+RAG_EMBEDDINGS_ENABLED=true
+RAILPACK_NODE_VERSION=20
+TRANSFORMERS_CACHE=/tmp/transformers-cache
+```
+
+`LOCAL_EMBEDDING_API_KEY` 在 Railway 中已设置为服务内 token。公网直接访问 `/v1/embeddings` 会返回 `401`，后端自调用会带 Bearer token。
+
+旧的独立 `embeddings` Railway 服务已不再作为主路径使用；demo 主链路依赖 app 内置 embedding endpoint。
+
 ## 部署要点
 
-1. 设置生产环境变量，尤其是 `DATABASE_URL`、`JWT_SECRET`、OAuth 和 OpenAI 配置。
-2. 执行 `pnpm db:migrate`，Agent 模式需要 `agent_runs` 与 `agent_run_steps` 表。
-3. 执行 `pnpm kb:embed` 回填知识库向量。
+1. 设置生产环境变量，尤其是 `DATABASE_URL`、`JWT_SECRET`、LLM 和 embedding 配置。
+2. 执行 `pnpm db:migrate`，Agent 模式需要 `agent_runs` 与 `agent_run_steps` 表；小模型迁移会把知识库向量列调整为 512 维。
+3. 执行 `pnpm kb:embed` 回填知识库向量；切换模型后旧向量会被重置，需要重新生成。
 4. 使用 `NODE_ENV=production pnpm start` 启动服务。
 5. 上线后检查智能客服、知识库、RAG 调试和 Agent Run 详情页。
 

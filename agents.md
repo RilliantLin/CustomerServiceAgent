@@ -23,13 +23,13 @@ AI 驱动的客服工单系统：工单全生命周期管理 + 基于 RAG/Agent 
 后端 (Express + tRPC + OpenAI Agents SDK)
    │
    ├── PostgreSQL + pgvector   数据 & 向量存储
-   ├── Embedding 服务          本地 bge-m3 / OpenAI / Voyage
+   ├── Embedding 服务          本地 bge-small-zh-v1.5 / OpenAI / Voyage
    └── LLM API                 OpenAI 兼容 / Manus Forge
 ```
 
 - **前端**：页面分为首页、工单管理、智能客服、知识库、RAG 调试、Agent Run 详情、管理仪表盘；路由用 wouter，数据用 tRPC + React Query。
 - **后端**：tRPC 路由按域划分（`tickets` / `knowledge` / `chat` / `agentRuns` / `auth` / `system`），数据库访问集中在 `server/db.ts`。
-- **认证**：Manus OAuth，区分普通用户与管理员，接口级权限校验。
+- **认证**：demo 本地登录区分普通用户与管理员；保留 Manus OAuth callback 作为可选兼容路径；接口级权限校验。
 
 ---
 
@@ -41,7 +41,7 @@ AI 驱动的客服工单系统：工单全生命周期管理 + 基于 RAG/Agent 
 | 知识库 | 知识条目的存储、检索、文档批量导入、冲突检测、增删 |
 | 智能客服 Agent | RAG 检索 + LLM/Agent 生成回答，展示执行过程，保存对话并标注引用来源 |
 | Agent Run 排查 | 持久化 Agent 运行记录、步骤、失败原因、结构化结果，支持详情页查看和重试 |
-| 认证与权限 | OAuth 登录、会话管理、角色与接口权限 |
+| 认证与权限 | demo 本地登录、OAuth callback 兼容路径、会话管理、角色与接口权限 |
 
 ### 数据模型（概览）
 
@@ -69,7 +69,8 @@ AI 驱动的客服工单系统：工单全生命周期管理 + 基于 RAG/Agent 
 
 **检索策略（RAG）**
 
-- 默认本地 `BAAI/bge-m3` 生成查询向量，PostgreSQL pgvector 按余弦距离 + HNSW 索引召回。
+- 默认本地 `BAAI/bge-small-zh-v1.5` 生成 512 维查询向量，PostgreSQL pgvector 按余弦距离 + HNSW 索引召回。
+- Railway demo 使用 app 内置 `/v1/embeddings` endpoint，运行 `Xenova/bge-small-zh-v1.5`；本地也可用 compose 中的独立 TEI embeddings 服务。
 - 嵌入服务不可用或条目未生成向量时，自动回退到关键词检索，保证可用性。
 - 默认返回相关度最高的若干条，作为回答依据并展示给用户。
 
@@ -135,7 +136,7 @@ AI 驱动的客服工单系统：工单全生命周期管理 + 基于 RAG/Agent 
 
 ## 用户使用手册
 
-- **登录**：通过 Manus OAuth 完成身份验证。
+- **登录**：demo 使用本地登录，普通用户访问 `/api/dev-login?role=user`，管理员访问 `/api/dev-login?role=admin`；Manus OAuth callback 仍保留为可选兼容路径。
 - **创建工单**：填写标题、描述、优先级后提交，系统返回工单 ID。
 - **查看工单**：支持按状态/优先级筛选与标题搜索；详情页查看信息、流转状态、添加备注。
 - **智能客服**：在聊天页提问，AI 基于知识库回答并展示引用来源、执行过程和结构化摘要，多轮对话自动保存。
@@ -156,7 +157,7 @@ client/          前端（pages 页面、components 组件、lib 工具）
 server/          后端（routers.ts 路由、chatStream.ts 流式聊天、agentService.ts Agent、db.ts 数据访问、knowledge/ 文档解析与导入、_core/ 框架）
 drizzle/         schema.ts 表定义 + 迁移文件
 scripts/         seed-data、embed-knowledge 等工具脚本
-compose.yaml     postgres + embeddings 本地服务
+compose.yaml     postgres + embeddings 本地服务；Railway demo 使用 app 内置 embedding endpoint
 ```
 
 ### 常用命令
@@ -196,7 +197,7 @@ pnpm kb:embed                              # 回填知识库向量
 pnpm dev
 ```
 
-> 端口：应用 3000、PostgreSQL 5432、embeddings 8080。embeddings 镜像仅有 amd64 版本，Apple 芯片需在 `compose.yaml` 中以 `platform: linux/amd64` 经 Rosetta 运行；首次会下载 bge-m3 权重并缓存到 `tei_data` 卷。
+> 端口：应用 3000、PostgreSQL 5432、embeddings 8080。embeddings 镜像仅有 amd64 版本，Apple 芯片需在 `compose.yaml` 中以 `platform: linux/amd64` 经 Rosetta 运行；首次会下载 `BAAI/bge-small-zh-v1.5` 权重并缓存到 `tei_data` 卷。
 >
 > 更新到包含 Agent Run 的版本后，务必执行 `pnpm db:migrate`，否则聊天在 `CHAT_MODE=agent` 下会因缺少 `agent_runs` / `agent_run_steps` 表而失败。
 
@@ -206,7 +207,7 @@ pnpm dev
 # 数据库 & 认证
 DATABASE_URL=postgres://user:password@host:5432/customer_service_agent
 JWT_SECRET=...                # 长随机串
-VITE_APP_ID / OAUTH_SERVER_URL / VITE_OAUTH_PORTAL_URL
+VITE_APP_ID / OAUTH_SERVER_URL / VITE_OAUTH_PORTAL_URL  # OAuth callback 可选保留
 
 # LLM（openai 兼容 或 manus）
 LLM_PROVIDER=openai
@@ -218,19 +219,49 @@ AGENT_HANDOFFS_ENABLED=false
 # Embedding（local / openai / voyage）
 EMBEDDING_PROVIDER=local
 LOCAL_EMBEDDING_BASE_URL=http://localhost:8080
+LOCAL_EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
+LOCAL_EMBEDDING_PATH=/v1/embeddings
+LOCAL_EMBEDDING_RUNTIME_MODEL=Xenova/bge-small-zh-v1.5
+LOCAL_EMBEDDING_API_KEY=      # 设置后 /v1/embeddings 需要 Bearer token
 RAG_EMBEDDINGS_ENABLED=true   # 设为 false 时仅用关键词检索
 OPENAI_EMBEDDING_MODEL / VOYAGE_EMBEDDING_MODEL
 ```
 
 完整项可参考 `.env.example`。
 
+### Railway Demo
+
+当前 demo 部署在 Railway：
+
+- 应用：[https://app-production-35d3.up.railway.app](https://app-production-35d3.up.railway.app)
+- 登录：`/api/dev-login?role=user` 或 `/api/dev-login?role=admin`
+- 数据库：Railway Postgres + pgvector
+- Embedding：app 内置 `/v1/embeddings`，运行 `Xenova/bge-small-zh-v1.5`，对外模型名 `BAAI/bge-small-zh-v1.5`，返回 512 维向量
+
+Railway app 关键变量：
+
+```bash
+EMBEDDING_PROVIDER=local
+LOCAL_EMBEDDING_BASE_URL=http://127.0.0.1:8080
+LOCAL_EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
+LOCAL_EMBEDDING_RUNTIME_MODEL=Xenova/bge-small-zh-v1.5
+LOCAL_EMBEDDING_PATH=/v1/embeddings
+RAG_EMBEDDINGS_ENABLED=true
+RAILPACK_NODE_VERSION=20
+TRANSFORMERS_CACHE=/tmp/transformers-cache
+```
+
+`LOCAL_EMBEDDING_API_KEY` 在 Railway 中作为服务内 token 设置。公网未授权请求 `/v1/embeddings` 会返回 `401`，后端自调用会带 Bearer token。
+
+旧的独立 `embeddings` Railway 服务已不再作为主路径使用；demo 主链路依赖 app 内置 embedding endpoint。
+
 ### 排查与维护
 
-- 服务问题先看后端日志与 `.manus-logs/`；嵌入相关用 `pnpm kb:embed:check` 和 `docker logs customer_service_agent_embeddings`。
+- 服务问题先看后端日志与 `.manus-logs/`；嵌入相关用 `pnpm kb:embed:check`，本地独立 TEI 服务可看 `docker logs customer_service_agent_embeddings`，Railway demo 主要看 app 日志。
 - 聊天失败且错误指向 `agent_runs` 时，先执行 `pnpm db:migrate`，再重试 `/api/chat/stream`。
 - Agent 回答生成了部分文本后出现 SDK 完成态异常时，后端会尽量保存最终回答和 Run metadata；详情页 `/runs/:runId` 可查看步骤和错误。
 - OpenAI tracing 导出网络失败不会阻断聊天主流程；排查 tracing 时先看 `AGENT_TRACING_ENABLED` 和网络出口。
-- 登录异常检查 OAuth 配置与 `JWT_SECRET`，必要时清 Cookie。
+- 登录异常先检查 demo `/api/dev-login?role=user|admin`、`JWT_SECRET` 与 Cookie；启用 OAuth 时再检查 OAuth 配置。
 - 备份：`pg_dump "$DATABASE_URL" > backup.sql`；恢复：`psql "$DATABASE_URL" < backup.sql`。
 
 ---
@@ -245,10 +276,10 @@ OPENAI_EMBEDDING_MODEL / VOYAGE_EMBEDDING_MODEL
 | 数据/状态 | tRPC 11、React Query |
 | 后端 | Express 4、tRPC 11 |
 | 数据库 | PostgreSQL 16 + pgvector、Drizzle ORM |
-| 向量 | bge-m3（本地）/ OpenAI / Voyage |
+| 向量 | BAAI/bge-small-zh-v1.5（本地，512 维）/ OpenAI / Voyage |
 | LLM | OpenAI Responses API / Manus Forge |
 | Agent | OpenAI Agents SDK |
-| 认证 | Manus OAuth |
+| 认证 | demo 本地登录；Manus OAuth callback 可选 |
 
 ### 参考
 
