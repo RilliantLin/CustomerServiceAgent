@@ -4,12 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { getDevLoginUrl, getLoginUrl, isDevLoginEnabled } from "@/const";
+import { getDevLoginUrl } from "@/const";
 
 export default function Home() {
   const { user, isAuthenticated, logout, loading } = useAuth();
   const [, setLocation] = useLocation();
-  const showDevLogin = isDevLoginEnabled();
   const [runId, setRunId] = useState("");
 
   if (loading) {
@@ -30,29 +29,20 @@ export default function Home() {
           {/* 导航栏 */}
           <div className="flex justify-between items-center mb-20">
             <div className="text-2xl font-bold text-gray-900">客服工单系统</div>
-            {showDevLogin ? (
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => window.location.href = getDevLoginUrl("user")}
-                >
-                  本地用户登录
-                </Button>
-                <Button
-                  onClick={() => window.location.href = getDevLoginUrl("admin")}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  本地管理员登录
-                </Button>
-              </div>
-            ) : (
+            <div className="flex gap-2">
               <Button
-                onClick={() => window.location.href = getLoginUrl()}
+                variant="outline"
+                onClick={() => window.location.href = getDevLoginUrl("user")}
+              >
+                演示用户登录
+              </Button>
+              <Button
+                onClick={() => window.location.href = getDevLoginUrl("admin")}
                 className="bg-blue-600 hover:bg-blue-700"
               >
-                登录
+                演示管理员登录
               </Button>
-            )}
+            </div>
           </div>
 
           {/* 主要内容 */}
@@ -83,30 +73,19 @@ export default function Home() {
                 </div>
               </div>
               <div className="mt-8 flex flex-wrap gap-3">
-                {showDevLogin ? (
-                  <>
-                    <Button
-                      onClick={() => window.location.href = getDevLoginUrl("user")}
-                      className="bg-blue-600 hover:bg-blue-700 text-lg px-8 py-6"
-                    >
-                      本地用户登录
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => window.location.href = getDevLoginUrl("admin")}
-                      className="text-lg px-8 py-6"
-                    >
-                      本地管理员登录
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    onClick={() => window.location.href = getLoginUrl()}
-                    className="bg-blue-600 hover:bg-blue-700 text-lg px-8 py-6"
-                  >
-                    开始使用
-                  </Button>
-                )}
+                <Button
+                  onClick={() => window.location.href = getDevLoginUrl("user")}
+                  className="bg-blue-600 hover:bg-blue-700 text-lg px-8 py-6"
+                >
+                  演示用户登录
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => window.location.href = getDevLoginUrl("admin")}
+                  className="text-lg px-8 py-6"
+                >
+                  演示管理员登录
+                </Button>
               </div>
             </div>
 

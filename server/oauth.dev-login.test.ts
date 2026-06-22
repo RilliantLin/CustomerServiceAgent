@@ -71,7 +71,7 @@ describe("development login route", () => {
     process.env.NODE_ENV = originalNodeEnv;
   });
 
-  it("is unavailable outside development", async () => {
+  it("creates a local user session in production for demos", async () => {
     process.env.NODE_ENV = "production";
     const { app, routes } = createFakeApp();
     registerOAuthRoutes(app as any);
@@ -82,9 +82,18 @@ describe("development login route", () => {
       res
     );
 
-    expect(res.statusCode).toBe(404);
-    expect(res.jsonBody).toEqual({ error: "Not found" });
-    expect(db.upsertUser).not.toHaveBeenCalled();
+    expect(db.upsertUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openId: "local-dev-user",
+        role: "user",
+        loginMethod: "dev",
+      })
+    );
+    expect(res.cookies[0]).toMatchObject({
+      name: COOKIE_NAME,
+      value: "session-token",
+    });
+    expect(res.redirectTo).toBe("/");
   });
 
   it("creates a local admin session in development", async () => {
