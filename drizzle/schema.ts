@@ -133,7 +133,7 @@ export const knowledgeBase = pgTable("knowledge_base", {
   content: text("content").notNull(), // 知识库条目内容
   category: varchar("category", { length: 100 }).notNull(), // 分类（FAQ、产品说明、政策等）
   keywords: text("keywords"), // 关键词（逗号分隔）
-  embedding: vector("embedding", { dimensions: 1024 }), // BAAI/bge-m3 向量嵌入
+  embedding: vector("embedding", { dimensions: 512 }), // BAAI/bge-small-zh-v1.5 向量嵌入
   documentId: integer("documentId"), // 来源上传文档 ID（手动添加的条目为 null）
   embeddingStatus: varchar("embeddingStatus", { length: 16 }).default("pending").notNull(), // pending | completed | failed
   conflictWith: integer("conflictWith"), // 检测到内容/标题冲突时，指向最相似的已有条目 ID

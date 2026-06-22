@@ -24,7 +24,7 @@ export const ENV = {
   localEmbeddingApiKey: process.env.LOCAL_EMBEDDING_API_KEY ?? "",
   localEmbeddingBaseUrl:
     process.env.LOCAL_EMBEDDING_BASE_URL ?? "http://localhost:8080",
-  localEmbeddingModel: process.env.LOCAL_EMBEDDING_MODEL ?? "BAAI/bge-m3",
+  localEmbeddingModel: process.env.LOCAL_EMBEDDING_MODEL ?? "BAAI/bge-small-zh-v1.5",
   localEmbeddingPath: process.env.LOCAL_EMBEDDING_PATH ?? "/v1/embeddings",
   voyageApiKey: process.env.VOYAGE_API_KEY ?? "",
   voyageBaseUrl: process.env.VOYAGE_BASE_URL ?? "https://api.voyageai.com",

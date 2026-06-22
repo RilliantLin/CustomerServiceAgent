@@ -27,7 +27,7 @@ services:
     command:
       [
         "--model-id",
-        "BAAI/bge-m3",
+        "BAAI/bge-small-zh-v1.5",
         "--pooling",
         "mean",
         "--max-concurrent-requests",
