@@ -5,6 +5,7 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
+import { registerLocalEmbeddingRoutes } from "./localEmbeddingServer";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -38,6 +39,7 @@ async function startServer() {
   app.get("/api/health", (_req, res) => {
     res.status(200).json({ ok: true });
   });
+  registerLocalEmbeddingRoutes(app);
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   registerChatStreamRoutes(app);
