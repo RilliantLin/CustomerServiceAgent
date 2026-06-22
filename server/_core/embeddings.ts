@@ -4,6 +4,7 @@ import {
   fetchWithBackoff,
   resolveOpenAiApiUrl,
 } from "./openai";
+import { observeAsync } from "./observability";
 
 type EmbeddingResponse = {
   data: Array<{
@@ -116,32 +117,45 @@ export async function createEmbedding(
     headers.authorization = `Bearer ${config.apiKey}`;
   }
 
-  const response = await fetchWithBackoff(
-    url,
+  return observeAsync(
+    "embedding.create",
     {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    },
-    label
-  );
-
-  if (!response.ok) {
-    throw await buildOpenAiHttpError({
-      label,
-      response,
-      url,
+      provider: config.provider,
       model: config.model,
-    });
-  }
+      inputType,
+    },
+    async () => {
+      const response = await fetchWithBackoff(
+        url,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        },
+        label
+      );
 
-  const data = (await response.json()) as EmbeddingResponse;
-  const embedding = data.data[0]?.embedding;
-  if (!embedding || embedding.length === 0) {
-    throw new Error(`${label} response did not include a vector`);
-  }
+      if (!response.ok) {
+        throw await buildOpenAiHttpError({
+          label,
+          response,
+          url,
+          model: config.model,
+        });
+      }
 
-  return embedding;
+      const data = (await response.json()) as EmbeddingResponse;
+      const embedding = data.data[0]?.embedding;
+      if (!embedding || embedding.length === 0) {
+        throw new Error(`${label} response did not include a vector`);
+      }
+
+      return embedding;
+    },
+    embedding => ({
+      dimensions: embedding.length,
+    })
+  );
 }
 
 export function cosineSimilarity(a: number[], b: number[]) {

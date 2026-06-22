@@ -54,6 +54,32 @@ export type AgentChatResponse = {
 const MAX_SUMMARY_LENGTH = 600;
 const AGENT_TRACE_GROUP_ID = "customer-service-agent";
 
+export const AgentToolInputSchemas = {
+  searchKnowledge: z.object({
+    query: z.string().min(1).describe("The customer question or topic to search for."),
+    limit: z.number().int().min(1).max(5).default(3),
+  }),
+  createTicket: z.object({
+    title: z.string().min(1).max(255),
+    description: z.string().min(1),
+    priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
+  }),
+  listTickets: z.object({
+    status: z.enum(["pending", "in_progress", "resolved", "closed"]).optional(),
+    priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+    search: z.string().min(1).max(100).optional(),
+    limit: z.number().int().min(1).max(10).default(5),
+    offset: z.number().int().min(0).default(0),
+  }),
+  getTicketById: z.object({
+    id: z.number().int().positive(),
+  }),
+  addTicketNote: z.object({
+    ticketId: z.number().int().positive(),
+    content: z.string().min(1).max(2_000),
+  }),
+};
+
 export const StructuredAgentOutputSchema = z.object({
   category: z.enum([
     "account",
@@ -96,7 +122,10 @@ type InputGuardrailResult =
       message: string;
     };
 
-const summarize = (value: unknown, maxLength = MAX_SUMMARY_LENGTH) => {
+export const summarizeAgentValue = (
+  value: unknown,
+  maxLength = MAX_SUMMARY_LENGTH
+) => {
   const text =
     typeof value === "string" ? value : JSON.stringify(value, null, 0);
   if (!text) return "";
@@ -227,7 +256,7 @@ export const buildStructuredAgentOutput = ({
   const fallback: StructuredAgentOutput = {
     category: inferCategory(combined),
     riskLevel: inferRiskLevel(combined),
-    summary: summarize(assistantContent || userContent, 1_000) || "暂无摘要",
+    summary: summarizeAgentValue(assistantContent || userContent, 1_000) || "暂无摘要",
     suggestedActions: [
       referencedTicketIds.length > 0
         ? "查看相关工单详情并确认最新处理状态"
@@ -446,7 +475,7 @@ const emitToolCall = async (
   await emitAgentEvent(context, {
     type: "tool_call",
     toolName,
-    argsSummary: summarize(args, 300),
+    argsSummary: summarizeAgentValue(args, 300),
   });
 };
 
@@ -458,7 +487,7 @@ const emitToolResult = async (
   await emitAgentEvent(context, {
     type: "tool_result",
     toolName,
-    resultSummary: summarize(result),
+    resultSummary: summarizeAgentValue(result),
   });
 };
 
@@ -503,10 +532,7 @@ export const agentTools = [
   tool({
     name: "searchKnowledge",
     description: "Search the customer service knowledge base for policies, FAQs, and product information.",
-    parameters: z.object({
-      query: z.string().min(1).describe("The customer question or topic to search for."),
-      limit: z.number().int().min(1).max(5).default(3),
-    }),
+    parameters: AgentToolInputSchemas.searchKnowledge,
     errorFunction: (_context, error) =>
       `知识库检索失败：${toolError(error)}。请说明无法确认，并建议创建工单。`,
     execute: async (input, runContext) => {
@@ -532,11 +558,7 @@ export const agentTools = [
   tool({
     name: "createTicket",
     description: "Create a support ticket for the current customer when the answer requires human follow-up.",
-    parameters: z.object({
-      title: z.string().min(1).max(255),
-      description: z.string().min(1),
-      priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
-    }),
+    parameters: AgentToolInputSchemas.createTicket,
     errorFunction: (_context, error) =>
       `工单创建失败：${toolError(error)}。请让用户稍后重试或联系人工客服。`,
     execute: async (input, runContext) => {
@@ -561,13 +583,7 @@ export const agentTools = [
   tool({
     name: "listTickets",
     description: "List support tickets visible to the current user. Use for recent tickets, status checks, and summaries.",
-    parameters: z.object({
-      status: z.enum(["pending", "in_progress", "resolved", "closed"]).optional(),
-      priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
-      search: z.string().min(1).max(100).optional(),
-      limit: z.number().int().min(1).max(10).default(5),
-      offset: z.number().int().min(0).default(0),
-    }),
+    parameters: AgentToolInputSchemas.listTickets,
     errorFunction: (_context, error) =>
       `工单查询失败：${toolError(error)}。请提示用户稍后重试。`,
     execute: async (input, runContext) => {
@@ -593,9 +609,7 @@ export const agentTools = [
   tool({
     name: "getTicketById",
     description: "Get details for a support ticket visible to the current user.",
-    parameters: z.object({
-      id: z.number().int().positive(),
-    }),
+    parameters: AgentToolInputSchemas.getTicketById,
     errorFunction: (_context, error) =>
       `工单详情查询失败：${toolError(error)}。请提示用户检查工单编号。`,
     execute: async (input, runContext) => {
@@ -631,10 +645,7 @@ export const agentTools = [
   tool({
     name: "addTicketNote",
     description: "Add a visible comment note to a support ticket that the current user can access.",
-    parameters: z.object({
-      ticketId: z.number().int().positive(),
-      content: z.string().min(1).max(2_000),
-    }),
+    parameters: AgentToolInputSchemas.addTicketNote,
     errorFunction: (_context, error) =>
       `添加工单备注失败：${toolError(error)}。请提示用户稍后重试。`,
     execute: async (input, runContext) => {

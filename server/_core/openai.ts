@@ -1,4 +1,5 @@
 import { ENV } from "./env";
+import { redactSensitiveText } from "./observability";
 
 type ResolveOpenAiApiUrlOptions = {
   baseUrl?: string;
@@ -49,9 +50,7 @@ const shouldRetryStatus = (status: number) =>
   status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
 
 const sanitizeErrorText = (text: string) =>
-  text
-    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/g, "Bearer [redacted]")
-    .replace(/sk-[A-Za-z0-9_-]{12,}/g, "sk-[redacted]")
+  redactSensitiveText(text)
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, ERROR_BODY_MAX_LENGTH);

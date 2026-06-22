@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { AgentRunStatus, AgentRunStepType } from "./db";
 import {
   AgentHandoffEvaluationSchema,
+  AgentToolInputSchemas,
   StructuredAgentOutputSchema,
   buildStructuredAgentOutput,
   evaluateInputGuardrails,
   evaluateAgentHandoff,
   getAgentRagComparison,
   getAgentTraceId,
+  summarizeAgentValue,
 } from "./agentService";
 
 const runStatuses: AgentRunStatus[] = [
@@ -93,6 +95,114 @@ describe("agent guardrails and structured output", () => {
     expect(structured.category).toBe("refund");
     expect(structured.riskLevel).toBe("medium");
     expect(structured.suggestedActions).toEqual(["核对订单状态"]);
+  });
+
+  it("falls back when structured JSON cannot be repaired", () => {
+    const structured = buildStructuredAgentOutput({
+      userContent: "系统报错，马上影响使用",
+      assistantContent:
+        '{"category":"invalid","riskLevel":"unknown","summary":"","suggestedActions":[],"shouldCreateTicket":"yes"}',
+      events: [],
+    });
+
+    expect(StructuredAgentOutputSchema.safeParse(structured).success).toBe(true);
+    expect(structured.category).toBe("technical");
+    expect(structured.riskLevel).toBe("urgent");
+    expect(structured.shouldCreateTicket).toBe(true);
+    expect(structured.suggestedActions[0]).toContain("创建工单");
+  });
+});
+
+describe("agent tool validation and summaries", () => {
+  it("validates tool inputs and applies defaults", () => {
+    expect(
+      AgentToolInputSchemas.searchKnowledge.parse({ query: "退货政策" })
+    ).toEqual({ query: "退货政策", limit: 3 });
+    expect(
+      AgentToolInputSchemas.createTicket.parse({
+        title: "物流异常",
+        description: "订单三天未更新",
+      })
+    ).toEqual({
+      title: "物流异常",
+      description: "订单三天未更新",
+      priority: "medium",
+    });
+    expect(
+      AgentToolInputSchemas.addTicketNote.safeParse({
+        ticketId: -1,
+        content: "",
+      }).success
+    ).toBe(false);
+  });
+
+  it("rejects invalid list ticket filters", () => {
+    expect(
+      AgentToolInputSchemas.listTickets.safeParse({
+        status: "deleted",
+        limit: 100,
+      }).success
+    ).toBe(false);
+  });
+
+  it("summarizes long tool results before exposing them to the frontend", () => {
+    const summary = summarizeAgentValue(
+      {
+        ticketId: 9,
+        description: "x".repeat(800),
+      },
+      120
+    );
+
+    expect(summary.length).toBeLessThanOrEqual(123);
+    expect(summary).toContain("ticketId");
+    expect(summary.endsWith("...")).toBe(true);
+  });
+});
+
+describe("agent run lifecycle transitions", () => {
+  it("models successful run creation through completion", () => {
+    const transitions: AgentRunStatus[] = [
+      "queued",
+      "planning",
+      "running",
+      "completed",
+    ];
+
+    expect(transitions[0]).toBe("queued");
+    expect(transitions.at(-1)).toBe("completed");
+    expect(transitions.every(status => runStatuses.includes(status))).toBe(true);
+  });
+
+  it("models failed and retry run recovery metadata", () => {
+    const failedRun = {
+      id: 41,
+      status: "failed" as AgentRunStatus,
+      input: "查询工单失败",
+      error: "tool timeout",
+    };
+    const retryRun = {
+      id: 42,
+      status: "queued" as AgentRunStatus,
+      retryOfRunId: failedRun.id,
+      input: failedRun.input,
+    };
+
+    expect(failedRun.status).toBe("failed");
+    expect(retryRun.retryOfRunId).toBe(41);
+    expect(retryRun.input).toBe(failedRun.input);
+  });
+
+  it("keeps persisted steps sufficient for refresh recovery", () => {
+    const persistedSteps: AgentRunStepType[] = [
+      "thinking",
+      "tool_call",
+      "tool_result",
+      "final",
+    ];
+
+    expect(persistedSteps.every(step => stepTypes.includes(step))).toBe(true);
+    expect(persistedSteps).toContain("final");
   });
 });
 

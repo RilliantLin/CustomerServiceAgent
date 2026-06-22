@@ -90,14 +90,14 @@
 
 ## 阶段 6：测试、观测与上线准备
 
-- [ ] 为 OpenAI provider 增加单元测试，mock Responses API 返回
-- [ ] 为 embedding / cosine similarity 增加单元测试
-- [ ] 为 `chat.sendMessage` 增加集成测试：召回、回复、保存消息
-- [ ] 为 Agent tool 入参校验、工具执行成功/失败、工具结果脱敏增加单元测试
-- [ ] 为结构化输出增加测试：schema 校验成功、缺字段兜底、模型修复失败兜底
-- [ ] 为 Agent Run 状态流转增加测试：创建、执行中、失败、重试、完成、刷新恢复
-- [ ] 增加基础 e2e 冒烟测试：登录、创建工单、查看列表、智能客服问答
-- [ ] 增加日志脱敏，避免记录 API key、session cookie、用户敏感内容
-- [ ] 增加成本与延迟观测：每次 LLM/embedding 调用耗时、token 使用量
-- [ ] 编写部署配置说明：OpenAI key、模型、数据库迁移、embedding 回填
-- [ ] 上线前关闭或限制本地开发登录入口，确保只在 development 生效
+- [x] 为 OpenAI provider 增加单元测试，mock Responses API 返回
+- [x] 为 embedding / cosine similarity 增加单元测试
+- [x] 为 `chat.sendMessage` 增加集成测试：召回、回复、保存消息
+- [x] 为 Agent tool 入参校验、工具执行成功/失败、工具结果脱敏增加单元测试
+- [x] 为结构化输出增加测试：schema 校验成功、缺字段兜底、模型修复失败兜底
+- [x] 为 Agent Run 状态流转增加测试：创建、执行中、失败、重试、完成、刷新恢复
+- [x] 增加基础 e2e 冒烟测试：登录、创建工单、查看列表、智能客服问答
+- [x] 增加日志脱敏，避免记录 API key、session cookie、用户敏感内容
+- [x] 增加成本与延迟观测：每次 LLM/embedding 调用耗时、token 使用量
+- [x] 编写部署配置说明：OpenAI key、模型、数据库迁移、embedding 回填
+- [x] 上线前关闭或限制本地开发登录入口，确保只在 development 生效

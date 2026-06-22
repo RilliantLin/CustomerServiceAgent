@@ -4,6 +4,7 @@ import {
   fetchWithBackoff,
   resolveOpenAiApiUrl,
 } from "./openai";
+import { observeAsync } from "./observability";
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -305,11 +306,37 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   const provider = ENV.llmProvider.trim().toLowerCase();
 
   if (provider === "openai") {
-    return invokeOpenAiResponses(params);
+    return observeAsync(
+      "llm.invoke",
+      {
+        provider: "openai",
+        model: params.model || ENV.openAiModel,
+        endpoint: "responses",
+      },
+      () => invokeOpenAiResponses(params),
+      result => ({
+        promptTokens: result.usage?.prompt_tokens ?? 0,
+        completionTokens: result.usage?.completion_tokens ?? 0,
+        totalTokens: result.usage?.total_tokens ?? 0,
+      })
+    );
   }
 
   if (provider === "manus" || provider === "forge") {
-    return invokeManusLLM(params);
+    return observeAsync(
+      "llm.invoke",
+      {
+        provider,
+        model: params.model || "default",
+        endpoint: "chat.completions",
+      },
+      () => invokeManusLLM(params),
+      result => ({
+        promptTokens: result.usage?.prompt_tokens ?? 0,
+        completionTokens: result.usage?.completion_tokens ?? 0,
+        totalTokens: result.usage?.total_tokens ?? 0,
+      })
+    );
   }
 
   throw new Error(

@@ -9,6 +9,7 @@ import {
   createEmbedding,
   isEmbeddingEnabled,
 } from "./_core/embeddings";
+import { logWarn } from "./_core/observability";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _client: ReturnType<typeof postgres> | null = null;
@@ -678,7 +679,9 @@ export async function searchKnowledge(query: string, limit = 5) {
 
     return scored.length > 0 ? scored : fallbackSearchKnowledge(query, limit);
   } catch (error) {
-    console.warn("[RAG] Vector search failed, falling back to keyword search:", error);
+    logWarn("[RAG] Vector search failed, falling back to keyword search", {
+      error,
+    });
     return fallbackSearchKnowledge(query, limit);
   }
 }
@@ -748,7 +751,9 @@ export async function debugSearchKnowledge(query: string, limit = 5) {
       })),
     };
   } catch (error) {
-    console.warn("[RAG] Debug vector search failed, falling back to keyword search:", error);
+    logWarn("[RAG] Debug vector search failed, falling back to keyword search", {
+      error,
+    });
     return keywordFallback(error instanceof Error ? error.message : "vector_search_failed");
   }
 }
