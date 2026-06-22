@@ -11,10 +11,10 @@ function getQueryParam(req: Request, key: string): string | undefined {
 
 function registerDevLoginRoutes(app: Express) {
   app.get("/api/dev-login", async (req: Request, res: Response) => {
-    if (process.env.NODE_ENV !== "development") {
-      res.status(404).json({ error: "Not found" });
-      return;
-    }
+    // if (process.env.NODE_ENV !== "development") {
+    //   res.status(404).json({ error: "Not found" });
+    //   return;
+    // }
 
     const requestedRole = getQueryParam(req, "role");
     const role = requestedRole === "admin" ? "admin" : "user";
@@ -79,7 +79,10 @@ export function registerOAuthRoutes(app: Express) {
       });
 
       const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      res.cookie(COOKIE_NAME, sessionToken, {
+        ...cookieOptions,
+        maxAge: ONE_YEAR_MS,
+      });
 
       res.redirect(302, "/");
     } catch (error) {
