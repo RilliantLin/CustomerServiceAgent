@@ -3,7 +3,11 @@ import { ENV } from "./_core/env";
 import { streamLLM } from "./_core/llm";
 import { sdk } from "./_core/sdk";
 import * as db from "./db";
-import { streamAgentChatResponse, type AgentEvent } from "./agentService";
+import {
+  streamAgentChatResponse,
+  type AgentEvent,
+  type StructuredAgentOutput,
+} from "./agentService";
 import {
   LLM_TIMEOUT_MS,
   prepareChatResponse,
@@ -15,6 +19,7 @@ type SsePayload =
       relatedKnowledge: Array<{ id: number; title: string; category: string }>;
       llmProvider: string;
       runId?: number;
+      structuredOutput?: StructuredAgentOutput;
     }
   | { type: "delta"; content: string }
   | {
@@ -92,6 +97,7 @@ export function registerChatStreamRoutes(app: Express) {
           relatedKnowledge: result.relatedKnowledgeSnapshot,
           llmProvider: "openai-agents",
           runId: result.runId,
+          structuredOutput: result.structuredOutput,
         });
         writeSse(res, {
           type: "done",

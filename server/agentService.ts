@@ -543,16 +543,17 @@ export const agentTools = [
       const context = runContext?.context as AgentContext | undefined;
       if (!context) throw new Error("缺少用户上下文");
       await emitToolCall(context, "createTicket", input);
-      await db.createTicket({
+      const ticket = await db.createTicket({
         userId: context.userId,
         title: input.title,
         description: input.description,
         priority: input.priority,
       });
-      const summary = { success: true };
+      const summary = { success: true, ticketId: ticket.id };
       await emitToolResult(context, "createTicket", summary);
       return {
         success: true,
+        ticketId: ticket.id,
         message: "工单已创建。请告知用户后续会由人工客服跟进。",
       };
     },

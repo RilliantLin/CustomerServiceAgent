@@ -33,7 +33,7 @@ export default function TicketCreate() {
         priority: priority as any,
       });
       toast.success("工单创建成功");
-      setLocation("/tickets");
+      setLocation(result?.id ? `/ticket/${result.id}` : "/tickets");
     } catch (error) {
       toast.error("创建工单失败");
     }

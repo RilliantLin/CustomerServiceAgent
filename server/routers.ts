@@ -8,6 +8,73 @@ import { createChatResponse, parseJsonValue } from "./chatService";
 import { createAgentChatResponse } from "./agentService";
 import { ingestDocument } from "./knowledge/ingest";
 import { ENV } from "./_core/env";
+import {
+  buildKnowledgeEmbeddingInput,
+  createEmbedding,
+  isEmbeddingEnabled,
+} from "./_core/embeddings";
+
+const ensureTicketAccess = async (
+  ticketId: number,
+  user: { id: number; role: "user" | "admin" }
+) => {
+  const ticket = await db.getTicketById(ticketId);
+  if (!ticket) throw new Error("Ticket not found");
+  if (user.role !== "admin" && ticket.userId !== user.id) {
+    throw new Error("Unauthorized");
+  }
+  return ticket;
+};
+
+const reindexKnowledgeEntry = async (id: number) => {
+  const entry = await db.getKnowledgeEntryById(id);
+  if (!entry) throw new Error("Knowledge entry not found");
+
+  if (!isEmbeddingEnabled()) {
+    await db.updateKnowledgeEntry(id, {
+      embedding: null,
+      embeddingStatus: "completed",
+      conflictWith: null,
+      conflictScore: null,
+    });
+    const conflict = await db.detectEntryConflict({
+      id: entry.id,
+      title: entry.title,
+      documentId: entry.documentId,
+      embedding: null,
+    });
+    if (conflict) {
+      await db.setEntryConflict(id, conflict.conflictWith, conflict.conflictScore);
+    }
+    return { embeddingEnabled: false, status: "completed" as const };
+  }
+
+  try {
+    await db.updateKnowledgeEntry(id, {
+      embeddingStatus: "pending",
+      conflictWith: null,
+      conflictScore: null,
+    });
+    const embedding = await createEmbedding(
+      buildKnowledgeEmbeddingInput(entry),
+      "document"
+    );
+    await db.setKnowledgeEntryEmbedding(id, embedding);
+    const conflict = await db.detectEntryConflict({
+      id: entry.id,
+      title: entry.title,
+      documentId: entry.documentId,
+      embedding,
+    });
+    if (conflict) {
+      await db.setEntryConflict(id, conflict.conflictWith, conflict.conflictScore);
+    }
+    return { embeddingEnabled: true, status: "completed" as const };
+  } catch (error) {
+    await db.setKnowledgeEntryStatus(id, "failed");
+    throw error;
+  }
+};
 
 export const appRouter = router({
   system: systemRouter,
@@ -44,8 +111,8 @@ export const appRouter = router({
     // 获取工单详情
     getById: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .query(async ({ input }) => {
-        return await db.getTicketById(input.id);
+      .query(async ({ input, ctx }) => {
+        return ensureTicketAccess(input.id, ctx.user);
       }),
 
     // 列表工单（支持筛选和搜索）
@@ -116,8 +183,31 @@ export const appRouter = router({
     // 获取工单备注历史
     getNotes: protectedProcedure
       .input(z.object({ ticketId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        await ensureTicketAccess(input.ticketId, ctx.user);
         return await db.getTicketNotes(input.ticketId);
+      }),
+
+    getChatHistory: protectedProcedure
+      .input(z.object({
+        ticketId: z.number(),
+        limit: z.number().optional().default(100),
+      }))
+      .query(async ({ input, ctx }) => {
+        await ensureTicketAccess(input.ticketId, ctx.user);
+        const history = await db.getTicketChatHistory(input.ticketId, input.limit);
+        return history.map(message => ({
+          ...message,
+          relatedKnowledgeIds: parseJsonValue<number[]>(
+            message.relatedKnowledgeIds,
+            []
+          ),
+          relatedKnowledge: parseJsonValue<Array<{
+            id: number;
+            title: string;
+            category: string;
+          }>>(message.relatedKnowledgeSnapshot, []),
+        }));
       }),
 
     // 添加工单备注
@@ -127,6 +217,7 @@ export const appRouter = router({
         content: z.string().min(1),
       }))
       .mutation(async ({ input, ctx }) => {
+        await ensureTicketAccess(input.ticketId, ctx.user);
         await db.addTicketNote({
           ticketId: input.ticketId,
           userId: ctx.user.id,
@@ -189,7 +280,67 @@ export const appRouter = router({
         if (ctx.user.role !== "admin") {
           throw new Error("Unauthorized");
         }
-        return await db.addKnowledgeEntry(input);
+        const entry = await db.addKnowledgeEntry(input);
+        try {
+          await reindexKnowledgeEntry(entry.id);
+        } catch {
+          // The mutation still succeeds so admins can fix embedding service later.
+        }
+        return entry;
+      }),
+
+    // 编辑知识库条目（仅管理员）
+    updateEntry: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        title: z.string().min(1),
+        content: z.string().min(1),
+        category: z.string().min(1),
+        keywords: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.user.role !== "admin") {
+          throw new Error("Unauthorized");
+        }
+        await db.updateKnowledgeEntry(input.id, {
+          title: input.title,
+          content: input.content,
+          category: input.category,
+          keywords: input.keywords?.trim() ? input.keywords : null,
+          embedding: null,
+          embeddingStatus: "pending",
+          conflictWith: null,
+          conflictScore: null,
+        });
+        try {
+          await reindexKnowledgeEntry(input.id);
+        } catch {
+          // Keep edited content even if embedding service is unavailable.
+        }
+        return { success: true };
+      }),
+
+    // 重新生成单条 embedding（仅管理员）
+    reindexEntry: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.user.role !== "admin") {
+          throw new Error("Unauthorized");
+        }
+        return reindexKnowledgeEntry(input.id);
+      }),
+
+    // RAG 调试：返回召回模式、分数、fallback 原因（仅管理员）
+    debugSearch: protectedProcedure
+      .input(z.object({
+        query: z.string().min(1),
+        limit: z.number().optional().default(5),
+      }))
+      .query(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") {
+          throw new Error("Unauthorized");
+        }
+        return db.debugSearchKnowledge(input.query, input.limit);
       }),
 
     // 上传文档（Markdown/CSV），解析为知识条目并后台向量化（仅管理员）

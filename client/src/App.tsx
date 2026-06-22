@@ -11,6 +11,8 @@ import TicketCreate from "./pages/TicketCreate";
 import SmartChat from "./pages/SmartChat";
 import AdminDashboard from "./pages/AdminDashboard";
 import KnowledgeBase from "./pages/KnowledgeBase";
+import AgentRunDetail from "./pages/AgentRunDetail";
+import RagDebug from "./pages/RagDebug";
 
 function Router() {
   return (
@@ -20,8 +22,10 @@ function Router() {
       <Route path={"/ticket/create"} component={TicketCreate} />
       <Route path={"/ticket/:id"} component={TicketDetail} />
       <Route path={"/chat"} component={SmartChat} />
+      <Route path={"/runs/:runId"} component={AgentRunDetail} />
       <Route path={"/admin/dashboard"} component={AdminDashboard} />
       <Route path={"/admin/knowledge"} component={KnowledgeBase} />
+      <Route path={"/admin/rag-debug"} component={RagDebug} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />

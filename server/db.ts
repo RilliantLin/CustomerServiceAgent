@@ -112,14 +112,17 @@ export async function createTicket(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(tickets).values({
-    userId: data.userId,
-    title: data.title,
-    description: data.description,
-    priority: data.priority || "medium",
-  });
+  const result = await db
+    .insert(tickets)
+    .values({
+      userId: data.userId,
+      title: data.title,
+      description: data.description,
+      priority: data.priority || "medium",
+    })
+    .returning({ id: tickets.id });
 
-  return result;
+  return result[0];
 }
 
 export async function getTicketById(ticketId: number) {
@@ -208,12 +211,23 @@ export async function addKnowledgeEntry(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  return db.insert(knowledgeBase).values({
-    title: data.title,
-    content: data.content,
-    category: data.category,
-    keywords: data.keywords,
-  });
+  const result = await db
+    .insert(knowledgeBase)
+    .values({
+      title: data.title,
+      content: data.content,
+      category: data.category,
+      keywords: data.keywords,
+    })
+    .returning({
+      id: knowledgeBase.id,
+      title: knowledgeBase.title,
+      content: knowledgeBase.content,
+      category: knowledgeBase.category,
+      keywords: knowledgeBase.keywords,
+    });
+
+  return result[0];
 }
 
 export async function getKnowledgeByCategory(category: string) {
@@ -228,6 +242,19 @@ export async function listKnowledgeEntries() {
   if (!db) throw new Error("Database not available");
 
   return db.select().from(knowledgeBase);
+}
+
+export async function getKnowledgeEntryById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .select()
+    .from(knowledgeBase)
+    .where(eq(knowledgeBase.id, id))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
 }
 
 export async function getKnowledgeByIds(ids: number[]) {
@@ -245,7 +272,32 @@ export async function updateKnowledgeEmbedding(id: number, embedding: number[]) 
   if (!db) throw new Error("Database not available");
 
   return db.update(knowledgeBase)
-    .set({ embedding, updatedAt: new Date() })
+    .set({ embedding, embeddingStatus: "completed", updatedAt: new Date() })
+    .where(eq(knowledgeBase.id, id));
+}
+
+export async function updateKnowledgeEntry(
+  id: number,
+  data: Partial<{
+    title: string;
+    content: string;
+    category: string;
+    keywords: string | null;
+    embedding: number[] | null;
+    embeddingStatus: "pending" | "completed" | "failed";
+    conflictWith: number | null;
+    conflictScore: number | null;
+  }>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db
+    .update(knowledgeBase)
+    .set({
+      ...data,
+      updatedAt: new Date(),
+    })
     .where(eq(knowledgeBase.id, id));
 }
 
@@ -567,6 +619,14 @@ export function rankKnowledgeEntriesByKeyword<T extends KeywordSearchEntry>(
   entries: T[],
   limit = 5
 ) {
+  return scoreKnowledgeEntriesByKeyword(query, entries, limit).map(item => item.entry);
+}
+
+export function scoreKnowledgeEntriesByKeyword<T extends KeywordSearchEntry>(
+  query: string,
+  entries: T[],
+  limit = 5
+) {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return [];
 
@@ -595,8 +655,7 @@ export function rankKnowledgeEntriesByKeyword<T extends KeywordSearchEntry>(
     })
     .filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map(item => item.entry);
+    .slice(0, limit);
 }
 
 export async function searchKnowledge(query: string, limit = 5) {
@@ -621,6 +680,76 @@ export async function searchKnowledge(query: string, limit = 5) {
   } catch (error) {
     console.warn("[RAG] Vector search failed, falling back to keyword search:", error);
     return fallbackSearchKnowledge(query, limit);
+  }
+}
+
+export async function debugSearchKnowledge(query: string, limit = 5) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const keywordFallback = async (reason: string) => {
+    const entries = await db.select().from(knowledgeBase);
+    const scored = scoreKnowledgeEntriesByKeyword(query, entries, limit);
+
+    return {
+      mode: "keyword" as const,
+      fallbackReason: reason,
+      results: scored.map(item => {
+        const { embedding: _embedding, ...entry } = item.entry as typeof item.entry & {
+          embedding?: unknown;
+        };
+        return {
+          ...entry,
+          score: item.score,
+          distance: null as number | null,
+        };
+      }),
+    };
+  };
+
+  if (!isEmbeddingEnabled()) {
+    return keywordFallback("embedding_disabled");
+  }
+
+  try {
+    const queryEmbedding = await createEmbedding(query, "query");
+    const distance = cosineDistance(knowledgeBase.embedding, queryEmbedding);
+    const scored = await db
+      .select({
+        id: knowledgeBase.id,
+        title: knowledgeBase.title,
+        content: knowledgeBase.content,
+        category: knowledgeBase.category,
+        keywords: knowledgeBase.keywords,
+        embeddingStatus: knowledgeBase.embeddingStatus,
+        documentId: knowledgeBase.documentId,
+        conflictWith: knowledgeBase.conflictWith,
+        conflictScore: knowledgeBase.conflictScore,
+        createdAt: knowledgeBase.createdAt,
+        updatedAt: knowledgeBase.updatedAt,
+        distance,
+      })
+      .from(knowledgeBase)
+      .where(isNotNull(knowledgeBase.embedding))
+      .orderBy(distance, desc(knowledgeBase.updatedAt))
+      .limit(limit);
+
+    if (scored.length === 0) {
+      return keywordFallback("no_vector_results");
+    }
+
+    return {
+      mode: "vector" as const,
+      fallbackReason: null as string | null,
+      results: scored.map(entry => ({
+        ...entry,
+        score: 1 - Number(entry.distance),
+        distance: Number(entry.distance),
+      })),
+    };
+  } catch (error) {
+    console.warn("[RAG] Debug vector search failed, falling back to keyword search:", error);
+    return keywordFallback(error instanceof Error ? error.message : "vector_search_failed");
   }
 }
 
@@ -666,6 +795,20 @@ export async function getChatHistory(userId: number, ticketId?: number, limit = 
 
   const rows = await db.select().from(chatMessages)
     .where(and(...conditions))
+    .orderBy(desc(chatMessages.createdAt))
+    .limit(limit);
+
+  return rows.reverse();
+}
+
+export async function getTicketChatHistory(ticketId: number, limit = 100) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const rows = await db
+    .select()
+    .from(chatMessages)
+    .where(eq(chatMessages.ticketId, ticketId))
     .orderBy(desc(chatMessages.createdAt))
     .limit(limit);
 

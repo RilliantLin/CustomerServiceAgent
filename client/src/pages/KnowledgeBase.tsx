@@ -3,9 +3,23 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,7 +37,14 @@ import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { toast } from "sonner";
-import { Trash2, AlertTriangle } from "lucide-react";
+import {
+  AlertTriangle,
+  Bug,
+  Edit3,
+  Plus,
+  RefreshCcw,
+  Trash2,
+} from "lucide-react";
 
 function useDebouncedValue<T>(value: T, delay: number) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -40,6 +61,14 @@ export default function KnowledgeBase() {
   const { user } = useAuth({ redirectOnUnauthenticated: true });
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
+  const [entryDialogOpen, setEntryDialogOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<any | null>(null);
+  const [entryForm, setEntryForm] = useState({
+    title: "",
+    content: "",
+    category: "",
+    keywords: "",
+  });
   const rawQuery = search.trim();
   const debouncedSearch = useDebouncedValue(search, 300);
   const query = rawQuery.length === 0 ? "" : debouncedSearch.trim();
@@ -53,15 +82,79 @@ export default function KnowledgeBase() {
   );
 
   const deleteEntryMutation = trpc.knowledge.deleteEntry.useMutation();
+  const addEntryMutation = trpc.knowledge.add.useMutation();
+  const updateEntryMutation = trpc.knowledge.updateEntry.useMutation();
+  const reindexEntryMutation = trpc.knowledge.reindexEntry.useMutation();
+
+  const refreshKnowledge = async () => {
+    await Promise.all([
+      utils.knowledge.list.invalidate(),
+      utils.knowledge.search.invalidate(),
+      utils.knowledge.listDocuments.invalidate(),
+    ]);
+  };
+
+  const openCreateDialog = () => {
+    setEditingEntry(null);
+    setEntryForm({
+      title: "",
+      content: "",
+      category: "",
+      keywords: "",
+    });
+    setEntryDialogOpen(true);
+  };
+
+  const openEditDialog = (entry: any) => {
+    setEditingEntry(entry);
+    setEntryForm({
+      title: entry.title,
+      content: entry.content,
+      category: entry.category,
+      keywords: entry.keywords ?? "",
+    });
+    setEntryDialogOpen(true);
+  };
+
+  const handleSaveEntry = async () => {
+    if (!entryForm.title.trim() || !entryForm.content.trim() || !entryForm.category.trim()) {
+      toast.error("请填写标题、内容和分类");
+      return;
+    }
+
+    try {
+      if (editingEntry) {
+        await updateEntryMutation.mutateAsync({
+          id: editingEntry.id,
+          ...entryForm,
+        });
+        toast.success("知识条目已更新");
+      } else {
+        await addEntryMutation.mutateAsync(entryForm);
+        toast.success("知识条目已新增");
+      }
+      setEntryDialogOpen(false);
+      await refreshKnowledge();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "保存失败");
+    }
+  };
+
+  const handleReindexEntry = async (id: number) => {
+    try {
+      await reindexEntryMutation.mutateAsync({ id });
+      await refreshKnowledge();
+      toast.success("已重新生成 embedding");
+    } catch (error) {
+      await refreshKnowledge();
+      toast.error(error instanceof Error ? error.message : "重新生成失败");
+    }
+  };
 
   const handleDeleteEntry = async (id: number) => {
     try {
       await deleteEntryMutation.mutateAsync({ id });
-      await Promise.all([
-        utils.knowledge.list.invalidate(),
-        utils.knowledge.search.invalidate(),
-        utils.knowledge.listDocuments.invalidate(),
-      ]);
+      await refreshKnowledge();
       toast.success("已删除该条目");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "删除失败");
@@ -122,9 +215,19 @@ export default function KnowledgeBase() {
             <h1 className="text-3xl font-bold text-gray-900">知识库</h1>
             <p className="text-gray-600 mt-1">查看客服知识条目，搜索 AI 回答可引用的内容</p>
           </div>
-          <Button variant="outline" onClick={() => setLocation("/admin/dashboard")}>
-            返回仪表盘
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setLocation("/admin/rag-debug")}>
+              <Bug className="mr-2 h-4 w-4" />
+              RAG 调试
+            </Button>
+            <Button onClick={openCreateDialog}>
+              <Plus className="mr-2 h-4 w-4" />
+              新增条目
+            </Button>
+            <Button variant="outline" onClick={() => setLocation("/admin/dashboard")}>
+              返回仪表盘
+            </Button>
+          </div>
         </div>
 
         <KnowledgeDocuments />
@@ -230,7 +333,38 @@ export default function KnowledgeBase() {
                                 addSuffix: true,
                               })}
                             </p>
+                            <p className="mt-1 text-xs">
+                              embedding：{entry.embeddingStatus}
+                            </p>
                           </div>
+                          <div className="flex items-center gap-1">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label="编辑条目"
+                                  onClick={() => openEditDialog(entry)}
+                                >
+                                  <Edit3 className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>编辑条目</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label="重新生成 embedding"
+                                  onClick={() => handleReindexEntry(entry.id)}
+                                  disabled={reindexEntryMutation.isPending}
+                                >
+                                  <RefreshCcw className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>重新生成 embedding</TooltipContent>
+                            </Tooltip>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button
@@ -256,10 +390,11 @@ export default function KnowledgeBase() {
                                   className="bg-red-600 hover:bg-red-700"
                                 >
                                   删除
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                          </div>
                         </div>
                       </div>
                     </CardContent>
@@ -270,6 +405,77 @@ export default function KnowledgeBase() {
           </div>
         </div>
       </div>
+
+      <Dialog open={entryDialogOpen} onOpenChange={setEntryDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingEntry ? "编辑知识条目" : "新增知识条目"}</DialogTitle>
+            <DialogDescription>
+              保存后会尝试重新生成 embedding；服务不可用时仍会保留文本内容。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                标题
+              </label>
+              <Input
+                value={entryForm.title}
+                onChange={(event) =>
+                  setEntryForm({ ...entryForm, title: event.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                分类
+              </label>
+              <Input
+                value={entryForm.category}
+                onChange={(event) =>
+                  setEntryForm({ ...entryForm, category: event.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                关键词
+              </label>
+              <Input
+                value={entryForm.keywords}
+                onChange={(event) =>
+                  setEntryForm({ ...entryForm, keywords: event.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                内容
+              </label>
+              <Textarea
+                value={entryForm.content}
+                rows={8}
+                onChange={(event) =>
+                  setEntryForm({ ...entryForm, content: event.target.value })
+                }
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEntryDialogOpen(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={handleSaveEntry}
+              disabled={addEntryMutation.isPending || updateEntryMutation.isPending}
+            >
+              {addEntryMutation.isPending || updateEntryMutation.isPending
+                ? "保存中..."
+                : "保存"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

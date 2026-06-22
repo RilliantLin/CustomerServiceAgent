@@ -13,6 +13,7 @@ import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
+import { MessageSquareText } from "lucide-react";
 
 interface TicketDetailProps {
   params: { id: string };
@@ -28,6 +29,8 @@ export default function TicketDetail({ params }: TicketDetailProps) {
 
   const { data: ticket, isLoading: ticketLoading } = trpc.tickets.getById.useQuery({ id: ticketId });
   const { data: notes, isLoading: notesLoading } = trpc.tickets.getNotes.useQuery({ ticketId });
+  const { data: chatHistory, isLoading: chatLoading } =
+    trpc.tickets.getChatHistory.useQuery({ ticketId });
 
   const updateMutation = trpc.tickets.update.useMutation();
   const addNoteMutation = trpc.tickets.addNote.useMutation();
@@ -271,6 +274,61 @@ export default function TicketDetail({ params }: TicketDetailProps) {
               </div>
             ) : (
               <p className="text-gray-500 text-center py-4">暂无备注</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>关联聊天记录</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {chatLoading ? (
+              <div className="flex justify-center py-6">
+                <Spinner />
+              </div>
+            ) : chatHistory && chatHistory.length > 0 ? (
+              <div className="space-y-3">
+                {chatHistory.map((message: any) => (
+                  <div
+                    key={message.id}
+                    className={`rounded-lg border p-4 ${
+                      message.role === "user"
+                        ? "border-blue-100 bg-blue-50"
+                        : "border-gray-200 bg-gray-50"
+                    }`}
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <span className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                        <MessageSquareText className="h-4 w-4 text-gray-500" />
+                        {message.role === "user" ? "用户" : "AI 客服"}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {formatDistanceToNow(new Date(message.createdAt), {
+                          locale: zhCN,
+                          addSuffix: true,
+                        })}
+                      </span>
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm leading-6 text-gray-700">
+                      {message.content}
+                    </p>
+                    {message.relatedKnowledge?.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2 border-t border-gray-200 pt-3">
+                        {message.relatedKnowledge.map((kb: any) => (
+                          <Badge key={kb.id} variant="outline">
+                            {kb.category} · {kb.title}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="py-6 text-center text-gray-500">
+                暂无关联聊天记录
+              </p>
             )}
           </CardContent>
         </Card>
